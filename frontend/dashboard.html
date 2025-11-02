@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+  <meta charset="UTF-8">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>GrowthEasy AI - Dashboard</title>
+
+  <link rel="stylesheet" href="styles.css">
+
+</head>
+
+<body>
+
+  <div class="navigation-bar">
+
+    <nav class="nav-container">
+
+      <div class="nav-logo"><h1>GrowthEasy AI</h1></div>
+
+      <ul class="nav-links">
+
+        <li><a href="dashboard.html" class="nav-btn active">Dashboard</a></li>
+
+        <li><a href="churn.html" class="nav-btn">Churn</a></li>
+
+        <li><a href="acquisition.html" class="nav-btn">Acquisition</a></li>
+
+        <li><a href="retention.html" class="nav-btn">Retention</a></li>
+
+        <li><a href="revenue.html" class="nav-btn">Revenue</a></li>
+
+        <li><a href="performance.html" class="nav-btn">Performance</a></li>
+
+        <li><a href="about.html" class="nav-btn">About</a></li>
+
+        <li><a href="signup.html" class="nav-btn">Sign Up</a></li>
+
+      </ul>
+
+      <div class="nav-actions">
+
+        <button class="profile-btn">Profile</button>
+
+        <button class="logout-btn">Logout</button>
+
+        <button class="refresh-btn">Refresh</button>
+
+      </div>
+
+    </nav>
+
+  </div>
+
+  <div id="root" class="page-view dashboard-view">
+
+    <h1>Dashboard</h1>
+
+    <div id="dashboard-metrics"></div>
+
+    <div class="charts-panel">
+
+      <div class="filter-bar">
+
+        <select id="time-filter" class="filter-select">
+
+          <option value="Weekly">Weekly</option>
+
+          <option value="Monthly">Monthly</option>
+
+          <option value="Custom">Custom</option>
+
+        </select>
+
+        <select id="customer-filter" class="filter-select">
+
+          <option value="All">All</option>
+
+          <option value="New">New</option>
+
+          <option value="Returning">Returning</option>
+
+        </select>
+
+      </div>
+
+      <div class="chart-placeholder">Mock Charts (Line/Bar)</div>
+
+    </div>
+
+    <div class="bottom-panel">
+
+      <div class="ai-insights" id="ai-insights"></div>
+
+      <div class="chat-panel">
+
+        <h3>Chat</h3>
+
+        <div class="chat-messages" id="chat-messages"></div>
+
+        <input type="text" id="chat-input" placeholder="Ask AI..." />
+
+        <button class="send-btn">Send</button>
+
+      </div>
+
+    </div>
+
+  </div>
+
+  <div class="footer">
+
+    <a href="#">About</a><a href="#">Contact</a><a href="#">Terms</a>
+
+    <p>Beta v0.1 © 2025 GrowthEasy</p>
+
+  </div>
+
+
+
+<script>
+
+  document.addEventListener('DOMContentLoaded', async () => {
+
+    const metricsDiv = document.getElementById('dashboard-metrics');
+
+    const insightsDiv = document.getElementById('ai-insights');
+
+    const chatMessagesDiv = document.getElementById('chat-messages');
+
+    const chatInput = document.getElementById('chat-input');
+
+    const sendBtn = document.querySelector('.send-btn');
+
+
+
+    // === SHOW LOADING ===
+
+    metricsDiv.innerHTML = "<p>Loading metrics...</p>";
+
+    insightsDiv.innerHTML = "<p>Loading AI insights...</p>";
+
+
+
+    // === FETCH METRICS ===
+
+    const metrics = await fetchData("metrics", {
+
+      "shopify_api_key": SHOPIFY.api_key,
+
+      "shopify_password": SHOPIFY.password,
+
+      "shopify_shop": SHOPIFY.shop
+
+    });
+
+
+
+    if (!metrics.error) {
+
+      metricsDiv.innerHTML = `
+
+        <div class="metrics-container">
+
+          <div class="revenue-tile">
+
+            <h3>Revenue</h3>
+
+            <p>£${metrics.revenue?.total || '0'}</p>
+
+            <p class="trend">↑ ${metrics.revenue?.trend || '0%'}</p>
+
+          </div>
+
+          <div class="churn-tile">
+
+            <h3>Churn Rate</h3>
+
+            <p>${metrics.shopify?.churn_rate || '0'}%</p>
+
+            <p class="at-risk">${metrics.shopify?.at_risk_customers || '0'} at risk</p>
+
+          </div>
+
+          <div class="acquisition-tile">
+
+            <h3>Acquisition Cost</h3>
+
+            <p>£${metrics.ga4?.acquisition_cost || '0'}</p>
+
+          </div>
+
+          <div class="channel-tile">
+
+            <h3>Top Channel</h3>
+
+            <p>${metrics.ga4?.top_channel || 'N/A'}</p>
+
+          </div>
+
+        </div>
+
+      `;
+
+    } else {
+
+      metricsDiv.innerHTML = `<p class="alert-text">Metrics offline</p>`;
+
+    }
+
+
+
+    // === FETCH AI INSIGHT ===
+
+    const ai = await fetchAIInsight("churn");
+
+    insightsDiv.innerHTML = ai.error
+
+      ? `<p class="alert-text">AI offline</p>`
+
+      : `<p class="alert-text">${ai.insight}</p>`;
+
+
+
+    // === CHAT SYSTEM ===
+
+    let messages = ['AI: Welcome! Ask me anything about your business.'];
+
+    const updateChat = () => {
+
+      chatMessagesDiv.innerHTML = messages.map(m => `<p>${m}</p>`).join('');
+
+      chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight;
+
+    };
+
+    updateChat();
+
+
+
+    sendBtn.addEventListener('click', async () => {
+
+      const question = chatInput.value.trim();
+
+      if (!question) return;
+
+
+
+      messages.push(`You: ${question}`, 'AI: Thinking...');
+
+      updateChat();
+
+      chatInput.value = '';
+
+
+
+      const aiRes = await fetchAIInsight("churn");
+
+      messages[messages.length - 1] = aiRes.error
+
+        ? 'AI: Sorry, I couldn’t process that.'
+
+        : `AI: ${aiRes.insight}`;
+
+      updateChat();
+
+    });
+
+
+
+    // === FILTERS (VISUAL ONLY) ===
+
+    ['time-filter', 'customer-filter'].forEach(id => {
+
+      const el = document.getElementById(id);
+
+      if (el) {
+
+        el.addEventListener('change', () => {
+
+          el.style.boxShadow = '0 0 20px #00FFFF';
+
+          setTimeout(() => el.style.boxShadow = '0 0 10px #00FFFF', 300);
+
+        });
+
+      }
+
+    });
+
+  });
+
+</script>
+
+
+
+</body>
+
+</html>
+

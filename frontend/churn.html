@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Churn - GrowthEasy</title>
+<link rel="stylesheet" href="styles.css" />
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto+Mono&display=swap" rel="stylesheet">
+</head>
+<body class="cyber-bg">
+<nav class="cyber-nav">
+<div class="logo">GrowthEasy</div>
+<ul>
+<li><a href="dashboard.html">Dashboard</a></li>
+<li><a href="revenue.html">Revenue</a></li>
+<li><a href="churn.html" class="active">Churn</a></li>
+<li><a href="acquisition.html">Acquisition</a></li>
+<li><a href="retention.html">Retention</a></li>
+<li><a href="performance.html">Performance</a></li>
+<li><a href="about.html">About</a></li>
+</ul>
+</nav>
+
+<div class="container">
+<h1 class="cyber-title glitch" data-text="CHURN RATE">CHURN RATE</h1>
+
+<div class="metric-grid">
+<div class="metric-card" id="churn-tile">
+<h3>Churn Rate</h3>
+<p id="churn-rate" class="metric-value">--%</p>
+<p id="lost-revenue" class="lost" style="color:#e74c3c;font-weight:bold;"></p>
+</div>
+<div class="metric-card">
+<h3>At-Risk Customers</h3>
+<p id="at-risk" class="metric-value">--</p>
+<button onclick="sendWinBack()" class="cyber-btn">Send 15% off win-back</button>
+</div>
+</div>
+
+<div class="ai-insight">
+<h3>AI Insight</h3>
+<p id="ai-insight">Analyzing...</p>
+</div>
+
+<div class="chat-box">
+<div id="chat-messages"></div>
+<input type="text" id="chat-input" placeholder="Ask about churn..." />
+<button onclick="sendMessage()">Send</button>
+</div>
+</div>
+
+<script src="script.js"></script>
+<script>
+const API_URL = 'http://localhost:8000';
+
+async function loadChurn() {
+try {
+const res = await fetch(`${API_URL}/metrics`);
+const data = await res.json();
+
+const monthlyRevenue = data.revenue || 12500;
+const churnRate = data.churn_rate || 7.5;
+const lost = (churnRate / 100) * monthlyRevenue;
+
+document.getElementById('churn-rate').textContent = `${churnRate}%`;
+document.getElementById('lost-revenue').textContent = `= £${lost.toFixed(0)}/mo bleeding`;
+document.getElementById('at-risk').textContent = data.at_risk_customers || 12;
+document.getElementById('ai-insight').textContent = data.ai_insights?.churn || "No insight.";
+} catch (e) {
+document.getElementById('ai-insight').textContent = "Backend not running.";
+}
+}
+
+async function sendWinBack() {
+const res = await fetch(`${API_URL}/shopify/email`, {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({
+template: 'winback_15off',
+customer_ids: [123, 456, 789]
+})
+});
+if (res.ok) {
+alert('Win-back sent!');
+showShareModal(940);
+}
+}
+
+function showShareModal(amount) {
+const modal = document.createElement('div');
+modal.style = 'position:fixed;top:20%;left:50%;transform:translateX(-50%);background:white;padding:20px;border:2px solid #2ecc71;border-radius:10px;z-index:999;';
+modal.innerHTML = `
+<h3>You just saved ~£${amount}!</h3>
+<button onclick="tweetSave(${amount})">Tweet it</button>
+<button onclick="this.parentElement.remove()">Close</button>
+`;
+document.body.appendChild(modal);
+}
+
+function tweetSave(amount) {
+const text = `Just saved £${amount} with @GrowthEasyAI — 1-click win-back! https://growtheasy.ai`;
+window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`);
+}
+
+loadChurn();
+setInterval(loadChurn, 10000);
+</script>
+</body>
+</html>

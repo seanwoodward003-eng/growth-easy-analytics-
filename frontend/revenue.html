@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+  <meta charset="UTF-8">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>GrowthEasy AI - Revenue</title>
+
+  <link rel="stylesheet" href="styles.css">
+
+</head>
+
+<body>
+
+  <div class="navigation-bar">
+
+    <nav class="nav-container">
+
+      <div class="nav-logo"><h1>GrowthEasy AI</h1></div>
+
+      <ul class="nav-links">
+
+        <li><a href="dashboard.html" class="nav-btn">Dashboard</a></li>
+
+        <li><a href="churn.html" class="nav-btn">Churn</a></li>
+
+        <li><a href="acquisition.html" class="nav-btn">Acquisition</a></li>
+
+        <li><a href="retention.html" class="nav-btn">Retention</a></li>
+
+        <li><a href="revenue.html" class="nav-btn active">Revenue</a></li>
+
+        <li><a href="performance.html" class="nav-btn">Performance</a></li>
+
+        <li><a href="about.html" class="nav-btn">About</a></li>
+
+        <li><a href="signup.html" class="nav-btn">Sign Up</a></li>
+
+      </ul>
+
+      <div class="nav-actions">
+
+        <button class="profile-btn">Profile</button>
+
+        <button class="logout-btn">Logout</button>
+
+        <button class="refresh-btn">Refresh</button>
+
+      </div>
+
+    </nav>
+
+  </div>
+
+  <div id="root" class="page-view revenue-view">
+
+    <h1>Revenue</h1>
+
+    <div id="revenue-stats"></div>
+
+    <div id="ai-forecast"></div>
+
+    <div id="summary">
+
+      <h3>Summary</h3>
+
+      <p id="revenue-summary">Loading summary...</p>
+
+    </div>
+
+  </div>
+
+  <div class="footer">
+
+    <a href="#">About</a><a href="#">Contact</a><a href="#">Terms</a>
+
+    <p>Beta v0.1 © 2025 GrowthEasy</p>
+
+  </div>
+
+  <script src="script.js"></script>
+
+  <script>
+
+    document.addEventListener('DOMContentLoaded', async () => {
+
+      const statsDiv = document.getElementById('revenue-stats');
+
+      const forecastDiv = document.getElementById('ai-forecast');
+
+      const summaryDiv = document.getElementById('revenue-summary');
+
+
+
+      const data = await fetchData('revenue');
+
+      if (!data.error) {
+
+        statsDiv.innerHTML = `
+
+          <p>Total Revenue: ${data.total || 'N/A'}</p>
+
+          <p>Trend: ${data.trend || 'N/A'}</p>
+
+          <p>Breakdown: ${data.breakdown || 'N/A'}</p>
+
+        `;
+
+        forecastDiv.innerHTML = `<h3>AI Forecast</h3><p>${data.message || 'No forecast'}</p>`;
+
+        summaryDiv.textContent = `Summary: ${data.message || 'Revenue growth on track, monitor trends.'}`;
+
+      }
+
+    });
+
+  </script>
+
+</body>
+
+</html>
+
