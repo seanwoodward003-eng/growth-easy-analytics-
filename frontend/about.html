@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+  <meta charset="UTF-8">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>GrowthEasy AI - About</title>
+
+  <link rel="stylesheet" href="styles.css">
+
+</head>
+
+<body>
+
+  <div class="navigation-bar">
+
+    <nav class="nav-container">
+
+      <div class="nav-logo"><h1>GrowthEasy AI</h1></div>
+
+      <ul class="nav-links">
+
+        <li><a href="dashboard.html" class="nav-btn">Dashboard</a></li>
+
+        <li><a href="churn.html" class="nav-btn">Churn</a></li>
+
+        <li><a href="acquisition.html" class="nav-btn">Acquisition</a></li>
+
+        <li><a href="retention.html" class="nav-btn">Retention</a></li>
+
+        <li><a href="revenue.html" class="nav-btn">Revenue</a></li>
+
+        <li><a href="performance.html" class="nav-btn">Performance</a></li>
+
+        <li><a href="about.html" class="nav-btn active">About</a></li>
+
+        <li><a href="signup.html" class="nav-btn">Sign Up</a></li>
+
+      </ul>
+
+      <div class="nav-actions">
+
+        <button class="profile-btn">Profile</button>
+
+        <button class="logout-btn">Logout</button>
+
+        <button class="refresh-btn">Refresh</button>
+
+      </div>
+
+    </nav>
+
+  </div>
+
+  <div id="root" class="page-view about-view">
+
+    <h1>About Us</h1>
+
+    <div id="about-content"></div>
+
+    <div id="summary">
+
+      <h3>Summary</h3>
+
+      <p id="about-summary">Loading summary...</p>
+
+    </div>
+
+  </div>
+
+  <div class="footer">
+
+    <a href="#">About</a><a href="#">Contact</a><a href="#">Terms</a>
+
+    <p>Beta v0.1 © 2025 GrowthEasy</p>
+
+  </div>
+
+  <script src="script.js"></script>
+
+  <script>
+
+    document.addEventListener('DOMContentLoaded', async () => {
+
+      const contentDiv = document.getElementById('about-content');
+
+      const summaryDiv = document.getElementById('about-summary');
+
+
+
+      const data = { 
+
+        description: 'GrowthEasy AI helps SMBs optimize growth with AI insights. Founded in 2025 by Sean.',
+
+        mission: 'Empowering SMBs with data-driven decisions.',
+
+        contact: 'support@growtheasy.ai',
+
+        terms: 'growtheasy.ai/terms',
+
+        summary: 'Dedicated to your business growth since 2025.'
+
+      };
+
+      if (!data.error) {
+
+        contentDiv.innerHTML = `
+
+          <p>${data.description}</p>
+
+          <p><strong>Mission:</strong> ${data.mission}</p>
+
+          <p>Contact: <a href="mailto:${data.contact}">${data.contact}</a> | Terms: <a href="${data.terms}">${data.terms}</a></p>
+
+        `;
+
+        summaryDiv.textContent = `Summary: ${data.summary}`;
+
+      }
+
+    });
+
+  </script>
+
+</body>
+
+</html>
