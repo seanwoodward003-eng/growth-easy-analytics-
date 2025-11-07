@@ -1,4 +1,4 @@
-# main.py — FINAL PRODUCTION VERSION
+# main.py — FINAL PRODUCTION VERSION FOR RENDER
 from flask import Flask, request, jsonify, redirect, send_from_directory, make_response
 import stripe
 import requests
@@ -6,20 +6,20 @@ import jwt
 import sqlite3
 import os
 from datetime import datetime, timedelta
-from urllib.parse import urlencode
 
 # === FLASK APP ===
 app = Flask(__name__, static_folder='.', static_url_path='')
-app.secret_key = os.getenv('SECRET_KEY', 'change-this-in-production-256-bit-key')
+app.secret_key = os.getenv('SECRET_KEY')
 
-# === CONFIG ===
-stripe.api_key = "sk_live_..."  # ← YOUR LIVE STRIPE KEY
-GROK_API_KEY = "your_xai_api_key_here"  # ← https://x.ai/api
-GOOGLE_CLIENT_ID = "your_google_client_id"
-GOOGLE_CLIENT_SECRET = "your_google_client_secret"
-HUBSPOT_CLIENT_ID = "your_hubspot_client_id"
-HUBSPOT_CLIENT_SECRET = "your_hubspot_client_secret"
-DOMAIN = "https://your-live-domain.com"  # ← YOUR LIVE URL
+# === CONFIG — ALL FROM ENVIRONMENT VARIABLES ===
+stripe.api_key = os.getenv('STRIPE_API_KEY')
+GROK_API_KEY = os.getenv('GROK_API_KEY')
+GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID')
+GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET')
+HUBSPOT_CLIENT_ID = os.getenv('HUBSPOT_CLIENT_ID')
+HUBSPOT_CLIENT_SECRET = os.getenv('HUBSPOT_CLIENT_SECRET')
+SHOPIFY_API_KEY = os.getenv('SHOPIFY_API_KEY')
+DOMAIN = os.getenv('DOMAIN')
 
 # === SQLITE DATABASE ===
 DB_FILE = "data.db"
@@ -88,7 +88,7 @@ def create_trial():
         customer = stripe.Customer.create(email=email)
         stripe.Subscription.create(
             customer=customer.id,
-            items=[{"price": "price_1ABC123"}],  # ← YOUR £25/mo PRICE ID
+            items=[{"price": os.getenv('STRIPE_PRICE_ID')}],  # ← SET THIS IN ENV
             trial_period_days=7,
             payment_behavior='default_incomplete'
         )
@@ -102,9 +102,9 @@ def create_trial():
             (email, customer.id)
         )
         conn.commit()
-        user_id = cursor.lastrowid
-        if not user_id:
-            user_id = cursor.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()[0]
+        user_id = cursor.lastrowid or cursor.execute(
+            "SELECT id FROM users WHERE email = ?", (email,)
+        ).fetchone()[0]
 
     token = jwt.encode(
         {"sub": str(user_id), "exp": datetime.utcnow() + timedelta(days=7)},
@@ -190,7 +190,7 @@ def oauth_start(provider):
             return "Invalid Shopify store", 400
         auth_url = (
             f"https://{shop}/admin/oauth/authorize?"
-            f"client_id=your-shopify-api-key"
+            f"client_id={SHOPIFY_API_KEY}"
             f"&scope=read_orders,read_customers"
             f"&redirect_uri={DOMAIN}/auth/shopify/callback"
             f"&state={shop}"
@@ -231,4 +231,4 @@ def oauth_callback(provider):
 def health():
     return jsonify({"status": "ok", "time": datetime.utcnow().isoformat()})
 
-# === NO if __name__ == '__main__' — VERCEL USES wsgi.py ===
+# === NO if __name__ == '__main__' — RENDER USES GUNICORN ===
