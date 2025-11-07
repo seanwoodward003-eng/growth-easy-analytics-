@@ -1,3 +1,4 @@
+# main.py — FINAL PRODUCTION VERSION
 from flask import Flask, request, jsonify, redirect, send_from_directory, make_response
 import stripe
 import requests
@@ -9,14 +10,16 @@ from urllib.parse import urlencode
 
 # === FLASK APP ===
 app = Flask(__name__, static_folder='.', static_url_path='')
-app.secret_key = os.getenv('SECRET_KEY', 'change-this-in-production-to-a-random-256-bit-key')
+app.secret_key = os.getenv('SECRET_KEY', 'change-this-in-production-256-bit-key')
 
 # === CONFIG ===
-stripe.api_key = "sk_live_..."  # ← YOUR LIVE STRIPE KEY (or test)
+stripe.api_key = "sk_live_..."  # ← YOUR LIVE STRIPE KEY
 GROK_API_KEY = "your_xai_api_key_here"  # ← https://x.ai/api
 GOOGLE_CLIENT_ID = "your_google_client_id"
 GOOGLE_CLIENT_SECRET = "your_google_client_secret"
-DOMAIN = "https://growtheasy-ai.com"  # ← YOUR LIVE DOMAIN
+HUBSPOT_CLIENT_ID = "your_hubspot_client_id"
+HUBSPOT_CLIENT_SECRET = "your_hubspot_client_secret"
+DOMAIN = "https://your-live-domain.com"  # ← YOUR LIVE URL
 
 # === SQLITE DATABASE ===
 DB_FILE = "data.db"
@@ -30,6 +33,7 @@ def init_db():
                 stripe_id TEXT,
                 shopify_shop TEXT,
                 ga4_connected INTEGER DEFAULT 0,
+                hubspot_connected INTEGER DEFAULT 0,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -47,7 +51,7 @@ def init_db():
         conn.commit()
 init_db()
 
-# === HELPERS ===
+# === AUTH HELPERS ===
 def get_user_id_from_token():
     token = request.cookies.get('token')
     if not token:
@@ -73,7 +77,7 @@ def index():
 def static_files(path):
     return send_from_directory('.', path)
 
-# SIGNUP + STRIPE + SAVE TO DB
+# === SIGNUP + STRIPE TRIAL ===
 @app.route('/create-trial', methods=['POST'])
 def create_trial():
     email = request.json.get('email', '').strip().lower()
@@ -84,7 +88,7 @@ def create_trial():
         customer = stripe.Customer.create(email=email)
         stripe.Subscription.create(
             customer=customer.id,
-            items=[{"price": "price_1ABC123"}],  # ← YOUR PRICE ID
+            items=[{"price": "price_1ABC123"}],  # ← YOUR £25/mo PRICE ID
             trial_period_days=7,
             payment_behavior='default_incomplete'
         )
@@ -98,7 +102,9 @@ def create_trial():
             (email, customer.id)
         )
         conn.commit()
-        user_id = cursor.lastrowid or cursor.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()[0]
+        user_id = cursor.lastrowid
+        if not user_id:
+            user_id = cursor.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()[0]
 
     token = jwt.encode(
         {"sub": str(user_id), "exp": datetime.utcnow() + timedelta(days=7)},
@@ -113,7 +119,7 @@ def create_trial():
     )
     return resp
 
-# METRICS
+# === METRICS ===
 @app.route('/api/metrics')
 def metrics():
     user_id = require_auth()
@@ -129,11 +135,10 @@ def metrics():
         row = cursor.fetchone()
 
     if row:
-        revenue, churn_rate, at_risk = row
         return jsonify({
-            "revenue": {"total": revenue, "trend": "+6%"},
-            "churn": {"rate": churn_rate, "at_risk": at_risk},
-            "ai_insight": f"Send win-back email to {at_risk} at-risk customers → save £2,400/mo."
+            "revenue": {"total": row[0], "trend": "+6%"},
+            "churn": {"rate": row[1], "at_risk": row[2]},
+            "ai_insight": f"Send win-back email to {row[2]} at-risk → save £2,400/mo."
         })
     else:
         return jsonify({
@@ -142,7 +147,7 @@ def metrics():
             "ai_insight": "Connect Shopify to unlock real insights."
         })
 
-# AI CHAT — POWERED BY GROK
+# === AI CHAT (GROK) ===
 @app.route('/api/chat', methods=['POST'])
 def ai_chat():
     user_id = require_auth()
@@ -175,47 +180,55 @@ def ai_chat():
 
     return jsonify({"reply": reply})
 
-# SHOPIFY OAUTH
-@app.route('/auth/shopify')
-def auth_shopify():
-    shop = request.args.get('shop', '').strip()
-    if not shop or not shop.endswith('.myshopify.com'):
-        return "Invalid Shopify store", 400
-    params = {
-        'client_id': 'your-shopify-api-key',
-        'scope': 'read_orders,read_customers',
-        'redirect_uri': f'{DOMAIN}/auth/shopify/callback',
-        'state': shop
-    }
-    return redirect(f"https://{shop}/admin/oauth/authorize?{urlencode(params)}")
+# === OAUTH: SHOPIFY, GA4, HUBSPOT ===
+@app.route('/auth/<provider>')
+def oauth_start(provider):
+    shop = request.args.get('shop', '').strip() if provider == 'shopify' else None
 
-@app.route('/auth/shopify/callback')
-def shopify_callback():
-    # In production: exchange code, save token
-    return "<script>localStorage.setItem('shopify','connected');window.close();</script>"
+    if provider == 'shopify':
+        if not shop or not shop.endswith('.myshopify.com'):
+            return "Invalid Shopify store", 400
+        auth_url = (
+            f"https://{shop}/admin/oauth/authorize?"
+            f"client_id=your-shopify-api-key"
+            f"&scope=read_orders,read_customers"
+            f"&redirect_uri={DOMAIN}/auth/shopify/callback"
+            f"&state={shop}"
+        )
+        return redirect(auth_url)
 
-# GA4 OAUTH
-@app.route('/auth/ga4')
-def auth_ga4():
-    params = {
-        'client_id': GOOGLE_CLIENT_ID,
-        'redirect_uri': f'{DOMAIN}/auth/ga4/callback',
-        'response_type': 'code',
-        'scope': 'https://www.googleapis.com/auth/analytics.readonly',
-        'access_type': 'offline',
-        'prompt': 'consent'
-    }
-    return redirect(f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}")
+    elif provider == 'ga4':
+        auth_url = (
+            f"https://accounts.google.com/o/oauth2/v2/auth?"
+            f"client_id={GOOGLE_CLIENT_ID}"
+            f"&redirect_uri={DOMAIN}/auth/ga4/callback"
+            f"&response_type=code"
+            f"&scope=https://www.googleapis.com/auth/analytics.readonly"
+            f"&access_type=offline"
+            f"&prompt=consent"
+        )
+        return redirect(auth_url)
 
-@app.route('/auth/ga4/callback')
-def ga4_callback():
-    return "<script>localStorage.setItem('ga4','connected');window.close();</script>"
+    elif provider == 'hubspot':
+        auth_url = (
+            f"https://app.hubspot.com/oauth/authorize?"
+            f"client_id={HUBSPOT_CLIENT_ID}"
+            f"&redirect_uri={DOMAIN}/auth/hubspot/callback"
+            f"&scope=contacts%20crm.objects.contacts.read"
+            f"&response_type=code"
+        )
+        return redirect(auth_url)
 
-# HEALTH CHECK
+    return "Invalid provider", 400
+
+@app.route('/auth/<provider>/callback')
+def oauth_callback(provider):
+    # In production: exchange code, save token to DB
+    return f"<script>localStorage.setItem('{provider}','connected');window.close();</script>"
+
+# === HEALTH CHECK ===
 @app.route('/health')
 def health():
     return jsonify({"status": "ok", "time": datetime.utcnow().isoformat()})
 
-# RUN
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+# === NO if __name__ == '__main__' — VERCEL USES wsgi.py ===
