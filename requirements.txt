@@ -1,7 +1,6 @@
 fastapi
 uvicorn
 stripe
-sqlite3
 requests
 python-jose[cryptography]
 passlib[bcrypt]
