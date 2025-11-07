@@ -6,3 +6,4 @@ python-jose[cryptography]
 passlib[bcrypt]
 google-auth-oauthlib
 google-auth
+PyJWT
