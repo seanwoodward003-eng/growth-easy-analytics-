@@ -1,10 +1,7 @@
 Flask
-fastapi
-uvicorn
 stripe
 requests
 python-jose[cryptography]
 passlib[bcrypt]
-python-multipart
 google-auth-oauthlib
 google-auth
