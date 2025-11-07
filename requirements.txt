@@ -1,5 +1,6 @@
 Flask
 stripe
+gunicorn
 requests
 python-jose[cryptography]
 passlib[bcrypt]
