@@ -23,6 +23,9 @@ SHOPIFY_CLIENT_SECRET = os.getenv('SHOPIFY_CLIENT_SECRET')
 HUBSPOT_CLIENT_ID = os.getenv('HUBSPOT_CLIENT_ID')
 HUBSPOT_CLIENT_SECRET = os.getenv('HUBSPOT_CLIENT_SECRET')
 
+# Frontend URL for redirect
+FRONTEND_URL = "https://growth-easy-analytics-git-846f14-seanwoodward003-engs-projects.vercel.app"
+
 # === SQLITE DATABASE ===
 DB_FILE = "data.db"
 
@@ -77,11 +80,15 @@ def require_auth():
 # === ROUTES ===
 @app.route('/')
 def index():
-    return send_from_directory('.', 'index.html')
+    # Redirect to frontend
+    return redirect(FRONTEND_URL)
 
 @app.route('/<path:path>')
 def static_files(path):
-    return send_from_directory('.', path)
+    # API routes only (no frontend files on backend)
+    if path.startswith('api/') or path.startswith('auth/'):
+        return path  # Handled by other routes
+    return redirect(FRONTEND_URL)
 
 # === SIGNUP + STRIPE TRIAL ===
 @app.route('/create-trial', methods=['POST'])
@@ -117,7 +124,7 @@ def create_trial():
         app.secret_key, algorithm="HS256"
     )
 
-    resp = make_response(redirect('/index.html'))
+    resp = make_response(redirect(FRONTEND_URL))
     resp.set_cookie(
         'token', token,
         httponly=True, secure=True, samesite='Lax',
@@ -191,7 +198,7 @@ def ai_chat():
 def oauth_start(provider):
     user_id = get_user_id_from_token()
     if not user_id:
-        return redirect(f"/?error=login_required")
+        return redirect(f"{FRONTEND_URL}/?error=login_required")
 
     shop = request.args.get('shop', '').strip() if provider == 'shopify' else None
 
