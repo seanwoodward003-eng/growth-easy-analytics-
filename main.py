@@ -1,5 +1,3 @@
-
-# main.py — FINAL PRODUCTION VERSION FOR RENDER
 from flask import Flask, request, jsonify, redirect, send_from_directory, make_response
 import stripe
 import requests
@@ -9,19 +7,18 @@ import os
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
-# === FLASK APP ===
 app = Flask(__name__, static_folder='.', static_url_path='')
 app.secret_key = os.getenv('SECRET_KEY')
 
 # === CONFIG — ALL FROM ENV ===
 stripe.api_key = os.getenv('STRIPE_API_KEY')
 GROK_API_KEY = os.getenv('GROK_API_KEY')
-DOMAIN = os.getenv('DOMAIN')  # e.g., https://your-app.onrender.com
+DOMAIN = os.getenv('DOMAIN')
 
-# OAuth Clients (exact env var names)
+# OAuth Clients
 GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID')
 GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET')
-SHOPIFY_API_KEY = os.getenv('SHOPIFY_API_KEY')          # Client ID
+SHOPIFY_API_KEY = os.getenv('SHOPIFY_API_KEY')
 SHOPIFY_CLIENT_SECRET = os.getenv('SHOPIFY_CLIENT_SECRET')
 HUBSPOT_CLIENT_ID = os.getenv('HUBSPOT_CLIENT_ID')
 HUBSPOT_CLIENT_SECRET = os.getenv('HUBSPOT_CLIENT_SECRET')
@@ -203,7 +200,7 @@ def oauth_start(provider):
             return "Invalid Shopify store", 400
         params = {
             'client_id': SHOPIFY_API_KEY,
-            'scope': 'read_orders,read_customers,read_products',
+            'scope': 'read_orders,read_customers',
             'redirect_uri': f"{DOMAIN}/auth/shopify/callback",
             'state': f"{user_id}|{shop}"
         }
@@ -258,7 +255,7 @@ def shopify_callback():
     }
     resp = requests.post(token_url, data=payload)
     if resp.status_code != 200:
-        return "Shopify auth failed", 400
+        return f"Shopify auth failed: {resp.text}", 400
     token_data = resp.json()
     access_token = token_data['access_token']
 
@@ -298,11 +295,7 @@ def ga4_callback():
 
     with sqlite3.connect(DB_FILE) as conn:
         conn.execute(
-            """UPDATE users SET 
-               ga4_connected = 1,
-               ga4_access_token = ?,
-               ga4_refresh_token = ?
-               WHERE id = ?""",
+            "UPDATE users SET ga4_connected = 1, ga4_access_token = ?, ga4_refresh_token = ? WHERE id = ?",
             (access_token, refresh_token, user_id)
         )
         conn.commit()
@@ -318,7 +311,7 @@ def hubspot_callback():
 
     user_id = int(state)
 
-    token_url = "https://api.hubapi.com/auth/v1/oauth/v2/token"
+    token_url = "https://api.hubapi.com/oauth/v1/token"
     payload = {
         'grant_type': 'authorization_code',
         'client_id': HUBSPOT_CLIENT_ID,
@@ -336,31 +329,12 @@ def hubspot_callback():
 
     with sqlite3.connect(DB_FILE) as conn:
         conn.execute(
-            """UPDATE users SET 
-               hubspot_connected = 1,
-               hubspot_refresh_token = ?
-               WHERE id = ?""",
+            "UPDATE users SET hubspot_connected = 1, hubspot_refresh_token = ? WHERE id = ?",
             (refresh_token, user_id)
         )
         conn.commit()
 
     return "<script>localStorage.setItem('hubspot','connected');window.close();</script>"
-
-# === DEBUG: View user data (optional) ===
-@app.route('/api/user')
-def user_debug():
-    user_id = get_user_id_from_token()
-    if not user_id:
-        return jsonify({"error": "Not logged in"}), 401
-
-    with sqlite3.connect(DB_FILE) as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM users WHERE id = ?", (user_id,))
-        row = cur.fetchone()
-        if not row:
-            return jsonify({"error": "User not found"}), 404
-        keys = [desc[0] for desc in cur.description]
-        return jsonify(dict(zip(keys, row)))
 
 # === HEALTH CHECK ===
 @app.route('/health')
