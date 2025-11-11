@@ -2,7 +2,7 @@ Flask
 Flask-cors
 stripe>=11.5.0
 gunicorn
-requests
+requests==2.31.0
 python-dateutil
 passlib[bcrypt]
 google-auth-oauthlib
