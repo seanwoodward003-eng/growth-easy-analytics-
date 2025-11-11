@@ -1,6 +1,6 @@
 Flask
 Flask-cors
-stripe>=11.0.0
+stripe>=11.5.0
 gunicorn
 requests
 python-dateutil
