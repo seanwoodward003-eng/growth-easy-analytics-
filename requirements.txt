@@ -3,7 +3,7 @@ Flask-cors
 stripe
 gunicorn
 requests
-python-jose[cryptography]
+python-dateutil
 passlib[bcrypt]
 google-auth-oauthlib
 google-auth
