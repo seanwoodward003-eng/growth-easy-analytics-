@@ -31,7 +31,7 @@ FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://growth-easy-analytics-2.onrend
 
 # === CORS & LOGGING ===
 # Updated: Include Render backend and wildcard for dev
-CORS(app, origins=[FRONTEND_URL, DOMAIN, "https://growth-easy-api.onrender.com", "*"])
+CORS(app, origins=[FRONTEND_URL, DOMAIN, "https://growth-easy-analytics-main-26jk-seanwoodward003-engs-projects.vercel.app", "*"])
 logging.basicConfig(level=logging.INFO)
 
 # === SQLITE DATABASE ===
