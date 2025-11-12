@@ -29,7 +29,7 @@ HUBSPOT_CLIENT_SECRET = os.getenv('HUBSPOT_CLIENT_SECRET')
 FRONTEND_URL = "https://growth-easy-analytics-git-846f14-seanwoodward003-engs-projects.vercel.app"
 
 # === CORS & LOGGING ===
-CORS(app, origins=[FRONTEND_URL, "*"])
+CORS(app, origins=[FRONTEND_URL, "https://growth-easy-analytics-git-846f14-seanwoodward003-engs-projects.vercel.app", "*"])
 logging.basicConfig(level=logging.INFO)
 
 # === SQLITE DATABASE ===
@@ -134,7 +134,8 @@ def create_trial():
             payment_behavior='default_incomplete'
         )
     except stripe.error.StripeError as e:
-        return jsonify({"error": str(e)}), 400
+        logging.error(f"Stripe error: {e}")
+        return jsonify({"error": "Payment setup failed—try again."}), 400
 
     with sqlite3.connect(DB_FILE) as conn:
         cursor = conn.cursor()
@@ -150,9 +151,12 @@ def create_trial():
         app.secret_key, algorithm="HS256"
     )
 
-    resp = make_response(redirect(FRONTEND_URL))
-    resp.set_cookie('token', token, httponly=True, secure=True, samesite='Lax', max_age=7*24*60*60)
-    return resp
+    # JSON response for JS fetch
+    return jsonify({
+        "success": True,
+        "token": token,
+        "redirect": FRONTEND_URL
+    }), 200
 
 # === DATA SYNC ===
 @app.route('/api/sync', methods=['POST'])
@@ -507,7 +511,7 @@ def ga4_callback():
             if not props:
                 logging.warning(f"No GA4 properties found for user {user_id}")
                 return "No GA4 properties found. Please create one in Google Analytics.", 400
-            property_id = props[0].get('name', '').split('/')[-1]  # e.g., "properties/123"
+            property_id = props[0].get('name', '').split('/')[-1]  # e.g., "123"
         else:
             logging.error(f"GA4 properties fetch failed: {props_resp.text}")
     except Exception as e:
