@@ -26,10 +26,12 @@ SHOPIFY_CLIENT_SECRET = os.getenv('SHOPIFY_CLIENT_SECRET')
 HUBSPOT_CLIENT_ID = os.getenv('HUBSPOT_CLIENT_ID')
 HUBSPOT_CLIENT_SECRET = os.getenv('HUBSPOT_CLIENT_SECRET')
 
-FRONTEND_URL = "https://growth-easy-analytics-git-846f14-seanwoodward003-engs-projects.vercel.app"
+# Updated: Use env var for flexibility (set FRONTEND_URL in Render env, e.g., https://your-frontend.com)
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://growth-easy-analytics-2.onrender.com')
 
 # === CORS & LOGGING ===
-CORS(app, origins=[FRONTEND_URL, "https://growth-easy-analytics-git-846f14-seanwoodward003-engs-projects.vercel.app", "*"])
+# Updated: Include Render backend and wildcard for dev
+CORS(app, origins=[FRONTEND_URL, DOMAIN, "https://growth-easy-api.onrender.com", "*"])
 logging.basicConfig(level=logging.INFO)
 
 # === SQLITE DATABASE ===
@@ -130,11 +132,14 @@ def create_trial():
         stripe.Subscription.create(
             customer=customer.id,
             items=[{"price": os.getenv('STRIPE_PRICE_ID')}],
-            trial_period_days=7,
-            payment_behavior='default_incomplete'
+            trial_period_days=7
+            # Updated: Removed payment_behavior='default_incomplete' (incompatible with trial)
+            # Optional: Add expand=['latest_invoice.payment_intent'] if monitoring needed later
         )
     except stripe.error.StripeError as e:
-        logging.error(f"Stripe error: {e}")
+        # Updated: Safer error handling to avoid AttributeError on str(e)
+        error_msg = getattr(e, 'user_message', str(e)) if hasattr(e, 'user_message') else f'StripeError: {e.__class__.__name__}'
+        logging.error(f"Stripe error for email {email}: {error_msg}")
         return jsonify({"error": "Payment setup failed—try again."}), 400
 
     with sqlite3.connect(DB_FILE) as conn:
