@@ -167,7 +167,7 @@ def create_trial():
     return jsonify({
         "success": True,
         "token": token,
-        "redirect": f"{FRONTEND_URL}/dashboard.html"
+        "redirect": f"{FRONTEND_URL}/index.html"
     }), 200
 
 # === DATA SYNC ===
