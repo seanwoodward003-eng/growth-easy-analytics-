@@ -26,13 +26,26 @@ SHOPIFY_CLIENT_SECRET = os.getenv('SHOPIFY_CLIENT_SECRET')
 HUBSPOT_CLIENT_ID = os.getenv('HUBSPOT_CLIENT_ID')
 HUBSPOT_CLIENT_SECRET = os.getenv('HUBSPOT_CLIENT_SECRET')
 
-# Updated: Use env var for flexibility (set FRONTEND_URL in Render env, e.g., https://your-frontend.com)
-FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://growth-easy-analytics-main-26jk-pb10b9hc9.vercel.app/signup.html')
+# Updated: Use env var for flexibility (set FRONTEND_URL in Render env, e.g., https://your-frontend.com – no trailing /signup.html)
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://growth-easy-analytics-main-26jk-pb10b9hc9.vercel.app')
 
 # === CORS & LOGGING ===
-# Updated: Include Render backend, Vercel, and wildcard for dev
-CORS(app, origins=[FRONTEND_URL, DOMAIN, "https://growth-easy-analytics-main-26jk-pb10b9hc9.vercel.app/signup.html", "*"])
+# Fixed: Exact origins (no wildcard for credentials) + supports_credentials=True for Safari cookies
+CORS(app, 
+     origins=[
+         FRONTEND_URL, 
+         DOMAIN, 
+         "https://growth-easy-analytics-main-26jk-pb10b9hc9.vercel.app",  # Latest preview
+         "https://growth-easy-analytics-main-26jk-seanwoodward003-engs-projects.vercel.app",  # Main
+         "https://s-main-26jk-ns9wjk1s.vercel.app",  # Other preview
+         "https://main-26jk-838h89s0h.vercel.app"  # Variant
+     ], 
+     supports_credentials=True,  # Enables cookies/token on Safari
+     methods=['GET', 'POST', 'OPTIONS'],  # Preflight support
+     allow_headers=['Content-Type', 'Authorization']  # Matches fetch
+)
 logging.basicConfig(level=logging.INFO)
+logging.info(f"CORS origins: {CORS(app).origins}")  # Log for debug
 
 # === SQLITE DATABASE ===
 DB_FILE = "data.db"
@@ -130,11 +143,8 @@ def create_trial():
             customer=customer.id,
             items=[{"price": os.getenv('STRIPE_PRICE_ID')}],
             trial_period_days=7
-            # Updated: Removed payment_behavior='default_incomplete' (incompatible with trial)
-            # Optional: Add expand=['latest_invoice.payment_intent'] if monitoring needed later
         )
     except stripe.error.StripeError as e:
-        # Updated: Safer error handling to avoid AttributeError on str(e)
         error_msg = getattr(e, 'user_message', str(e)) if hasattr(e, 'user_message') else f'StripeError: {e.__class__.__name__}'
         logging.error(f"Stripe error for email {email}: {error_msg}")
         return jsonify({"error": "Payment setup failed—try again."}), 400
@@ -153,11 +163,11 @@ def create_trial():
         app.secret_key, algorithm="HS256"
     )
 
-    # JSON response for JS fetch
+    logging.info(f"Trial created for {email}, redirect to {FRONTEND_URL}")
     return jsonify({
         "success": True,
         "token": token,
-        "redirect": FRONTEND_URL
+        "redirect": f"{FRONTEND_URL}/dashboard.html"  # Direct to dashboard
     }), 200
 
 # === DATA SYNC ===
@@ -509,10 +519,10 @@ def ga4_callback():
     access_token = token_data.get('access_token', '')
     refresh_token = token_data.get('refresh_token', '')
 
-    # Use Admin API to list properties
+    # Fixed: Use correct Admin API URL for current user properties (was 404)
     property_id = ''
     try:
-        admin_url = "https://analyticsadmin.googleapis.com/v1beta/properties"
+        admin_url = "https://analyticsadmin.googleapis.com/v1beta/accounts/~ /properties"  # ~ for current account
         props_resp = requests.get(admin_url, headers={'Authorization': f'Bearer {access_token}'})
         if props_resp.status_code == 200:
             props = props_resp.json().get('properties', [])
