@@ -30,7 +30,7 @@ HUBSPOT_CLIENT_SECRET = os.getenv('HUBSPOT_CLIENT_SECRET')
 FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://growth-easy-analytics-2.onrender.com')
 
 # === CORS & LOGGING ===
-# Updated: Include Render backend and wildcard for dev
+# Updated: Include Render backend, Vercel, and wildcard for dev
 CORS(app, origins=[FRONTEND_URL, DOMAIN, "https://growth-easy-analytics-main-26jk-seanwoodward003-engs-projects.vercel.app", "*"])
 logging.basicConfig(level=logging.INFO)
 
@@ -108,20 +108,17 @@ def require_auth():
         return jsonify({"error": "Unauthorized"}), 401
     return user
 
-# === ROUTES ===
+# === SPECIFIC ROUTES FIRST (Ensures matching before catch-all) ===
 @app.route('/')
 def index():
     return redirect(FRONTEND_URL)
 
-@app.route('/<path:path>')
-def static_files(path):
-    if path.startswith('api/') or path.startswith('auth/'):
-        return path
-    return redirect(FRONTEND_URL)
-
-# === SIGNUP + STRIPE TRIAL ===
-@app.route('/create-trial', methods=['POST'])
+# === SIGNUP + STRIPE TRIAL (Moved up for priority) ===
+@app.route('/create-trial', methods=['POST', 'OPTIONS'])
 def create_trial():
+    logging.info(f"Received request to /create-trial from {request.origin} with method {request.method}")
+    if request.method == 'OPTIONS':
+        return '', 200  # Preflight OK
     email = request.json.get('email', '').strip().lower()
     consent = request.json.get('consent', False)
     if not email or '@' not in email or '.' not in email or not consent:
@@ -164,8 +161,10 @@ def create_trial():
     }), 200
 
 # === DATA SYNC ===
-@app.route('/api/sync', methods=['POST'])
+@app.route('/api/sync', methods=['POST', 'OPTIONS'])
 def sync_data():
+    if request.method == 'OPTIONS':
+        return '', 200
     user = require_auth()
     if isinstance(user, tuple):
         return user
@@ -314,8 +313,10 @@ def sync_data():
     })
 
 # === METRICS ===
-@app.route('/api/metrics')
+@app.route('/api/metrics', methods=['GET', 'OPTIONS'])
 def metrics():
+    if request.method == 'OPTIONS':
+        return '', 200
     user = require_auth()
     if isinstance(user, tuple):
         return user
@@ -354,8 +355,10 @@ def metrics():
         })
 
 # === AI CHAT ===
-@app.route('/api/chat', methods=['POST'])
+@app.route('/api/chat', methods=['POST', 'OPTIONS'])
 def ai_chat():
+    if request.method == 'OPTIONS':
+        return '', 200
     user = require_auth()
     if isinstance(user, tuple):
         return user
@@ -570,6 +573,15 @@ def hubspot_callback():
 @app.route('/health')
 def health():
     return jsonify({"status": "ok", "time": datetime.utcnow().isoformat()})
+
+# === CATCH-ALL LAST (For non-matched paths) ===
+@app.route('/<path:path>', methods=['GET', 'POST', 'OPTIONS'])
+def static_files(path):
+    if path.startswith('api/') or path.startswith('auth/'):
+        pass  # Let Flask route these (no return—handlers catch them)
+    else:
+        return redirect(FRONTEND_URL)
+    # Implicit: For OPTIONS preflight on API/auth, CORS handles 200
 
 if __name__ == '__main__':
     app.run(debug=True)
