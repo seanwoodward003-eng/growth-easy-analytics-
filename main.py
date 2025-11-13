@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, redirect, make_response
+from flask import Flask, request, jsonify, redirect
 import stripe
 import requests
 import jwt
@@ -16,7 +16,7 @@ app.secret_key = os.getenv('SECRET_KEY')
 # === CONFIG ===
 stripe.api_key = os.getenv('STRIPE_API_KEY')
 GROK_API_KEY = os.getenv('GROK_API_KEY')
-DOMAIN = os.getenv('DOMAIN', '').rstrip('/')  # Clean trailing slash
+DOMAIN = os.getenv('DOMAIN', '').rstrip('/')
 
 # OAuth Clients
 GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID')
@@ -26,26 +26,28 @@ SHOPIFY_CLIENT_SECRET = os.getenv('SHOPIFY_CLIENT_SECRET')
 HUBSPOT_CLIENT_ID = os.getenv('HUBSPOT_CLIENT_ID')
 HUBSPOT_CLIENT_SECRET = os.getenv('HUBSPOT_CLIENT_SECRET')
 
-# Updated: Use env var for flexibility (set FRONTEND_URL in Render env, e.g., https://your-frontend.com – no trailing /signup.html)
-FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://growth-easy-analytics-main-26jk-pb10b9hc9.vercel.app')
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://growth-easy-analytics-main-26jk-pb10b9hc9.vercel.app').rstrip('/')
 
 # === CORS & LOGGING ===
-# Fixed: Exact origins (no wildcard for credentials) + supports_credentials=True for Safari cookies
-CORS(app, 
-     origins=[
-         FRONTEND_URL, 
-         DOMAIN, 
-         "https://growth-easy-analytics-main-26jk-pb10b9hc9.vercel.app",  # Latest preview
-         "https://growth-easy-analytics-main-26jk-seanwoodward003-engs-projects.vercel.app",  # Main
-         "https://s-main-26jk-ns9wjk1s.vercel.app",  # Other preview
-         "https://main-26jk-838h89s0h.vercel.app"  # Variant
-     ], 
-     supports_credentials=True,  # Enables cookies/token on Safari
-     methods=['GET', 'POST', 'OPTIONS'],  # Preflight support
-     allow_headers=['Content-Type', 'Authorization']  # Matches fetch
+ALLOWED_ORIGINS = [
+    FRONTEND_URL,
+    DOMAIN,
+    "https://growth-easy-analytics-main-26jk-pb10b9hc9.vercel.app",
+    "https://growth-easy-analytics-main-26jk-seanwoodward003-engs-projects.vercel.app",
+    "https://s-main-26jk-ns9wjk1s.vercel.app",
+    "https://main-26jk-838h89s0h.vercel.app"
+]
+
+CORS(
+    app,
+    origins=ALLOWED_ORIGINS,
+    supports_credentials=True,
+    methods=['GET', 'POST', 'OPTIONS'],
+    allow_headers=['Content-Type', 'Authorization']
 )
+
 logging.basicConfig(level=logging.INFO)
-logging.info(f"CORS origins: {CORS(app).origins}")  # Log for debug
+logging.info(f"CORS origins configured: {ALLOWED_ORIGINS}")
 
 # === SQLITE DATABASE ===
 DB_FILE = "data.db"
@@ -121,17 +123,16 @@ def require_auth():
         return jsonify({"error": "Unauthorized"}), 401
     return user
 
-# === SPECIFIC ROUTES FIRST (Ensures matching before catch-all) ===
+# === ROUTES ===
 @app.route('/')
 def index():
     return redirect(FRONTEND_URL)
 
-# === SIGNUP + STRIPE TRIAL (Moved up for priority) ===
+# === SIGNUP + STRIPE TRIAL ===
 @app.route('/create-trial', methods=['POST', 'OPTIONS'])
 def create_trial():
-    logging.info(f"Received request to /create-trial from {request.origin} with method {request.method}")
     if request.method == 'OPTIONS':
-        return '', 200  # Preflight OK
+        return '', 200
     email = request.json.get('email', '').strip().lower()
     consent = request.json.get('consent', False)
     if not email or '@' not in email or '.' not in email or not consent:
@@ -163,11 +164,10 @@ def create_trial():
         app.secret_key, algorithm="HS256"
     )
 
-    logging.info(f"Trial created for {email}, redirect to {FRONTEND_URL}")
     return jsonify({
         "success": True,
         "token": token,
-        "redirect": f"{FRONTEND_URL}/dashboard.html"  # Direct to dashboard
+        "redirect": f"{FRONTEND_URL}/dashboard.html"
     }), 200
 
 # === DATA SYNC ===
@@ -212,10 +212,7 @@ def sync_data():
                     total_orders = len(orders)
                     churn_rate = (canceled / total_orders * 100) if total_orders else 0
 
-                    customer_ids = set()
-                    for o in orders:
-                        cid = o.get('customer', {}).get('id')
-                        if cid: customer_ids.add(cid)
+                    customer_ids = {o.get('customer', {}).get('id') for o in orders if o.get('customer')}
                     if customer_ids:
                         ltv = revenue / len(customer_ids) * 3
 
@@ -231,45 +228,17 @@ def sync_data():
                 logging.error(f"Shopify sync error (user {user_id}): {e}")
 
         # === GA4 ===
-        if ga4_property:
+        if ga4_property and ga4_token:
             try:
-                # Force refresh if refresh_token exists
-                if ga4_refresh:
-                    refresh_resp = requests.post(
-                        "https://oauth2.googleapis.com/token",
-                        data={
-                            'client_id': GOOGLE_CLIENT_ID,
-                            'client_secret': GOOGLE_CLIENT_SECRET,
-                            'refresh_token': ga4_refresh,
-                            'grant_type': 'refresh_token'
-                        }
-                    )
-                    if refresh_resp.status_code == 200:
-                        new_token = refresh_resp.json()['access_token']
-                        cursor.execute(
-                            "UPDATE users SET ga4_access_token = ?, ga4_last_refreshed = ? WHERE id = ?",
-                            (new_token, now.isoformat(), user_id)
-                        )
-                        conn.commit()
-                        ga4_token = new_token
-                    else:
-                        logging.warning(f"GA4 token refresh failed: {refresh_resp.text}")
-                        return jsonify({"error": "GA4 token refresh failed"}), 500
-
-                if not ga4_token:
-                    return jsonify({"error": "No GA4 access token"}), 400
-
                 report_url = f"https://analyticsdata.googleapis.com/v1beta/properties/{ga4_property}:runReport"
+                headers = {'Authorization': f'Bearer {ga4_token}', 'Content-Type': 'application/json'}
+
+                # Channel & CAC
                 payload = {
                     "dateRanges": [{"startDate": "30daysAgo", "endDate": "today"}],
                     "dimensions": [{"name": "channelGrouping"}],
-                    "metrics": [
-                        {"name": "newUsers"},
-                        {"name": "totalUsers"},
-                        {"name": "userAcquisition::estimatedAdCost"}
-                    ]
+                    "metrics": [{"name": "newUsers"}, {"name": "userAcquisition::estimatedAdCost"}]
                 }
-                headers = {'Authorization': f'Bearer {ga4_token}', 'Content-Type': 'application/json'}
                 report_resp = requests.post(report_url, json=payload, headers=headers, timeout=10)
                 if report_resp.status_code == 200:
                     rows = report_resp.json().get('rows', [])
@@ -277,18 +246,19 @@ def sync_data():
                         top_row = rows[0]
                         top_channel = top_row['dimensionValues'][0]['value']
                         new_users = int(top_row['metricValues'][0]['value'])
-                        acquisition_cost = float(top_row['metricValues'][2]['value']) if len(top_row['metricValues']) > 2 else 0
+                        acquisition_cost = float(top_row['metricValues'][1]['value']) if len(top_row['metricValues']) > 1 else 0
                         cac = acquisition_cost / new_users if new_users else 0
 
-                    # Retention
-                    retention_payload = {
-                        "dateRanges": [{"startDate": "30daysAgo", "endDate": "today"}],
-                        "metrics": [{"name": "cohortUserRetentionRate"}]
-                    }
-                    retention_resp = requests.post(report_url, json=retention_payload, headers=headers, timeout=10)
-                    if retention_resp.status_code == 200:
-                        r_rows = retention_resp.json().get('rows', [])
-                        retention_rate = float(r_rows[0]['metricValues'][0]['value']) * 100 if r_rows else 85
+                # Retention
+                retention_payload = {
+                    "dateRanges": [{"startDate": "30daysAgo", "endDate": "today"}],
+                    "metrics": [{"name": "cohortUserRetentionRate"}]
+                }
+                retention_resp = requests.post(report_url, json=retention_payload, headers=headers, timeout=10)
+                if retention_resp.status_code == 200:
+                    r_rows = retention_resp.json().get('rows', [])
+                    retention_rate = float(r_rows[0]['metricValues'][0]['value']) * 100 if r_rows else 85
+
             except Exception as e:
                 logging.error(f"GA4 sync error (user {user_id}): {e}")
 
@@ -317,8 +287,14 @@ def sync_data():
         conn.commit()
 
     return jsonify({
-        "status": "Synced", "revenue": revenue, "churn_rate": churn_rate, "at_risk": at_risk,
-        "ltv": ltv, "cac": cac, "top_channel": top_channel, "acquisition_cost": acquisition_cost,
+        "status": "Synced",
+        "revenue": revenue,
+        "churn_rate": churn_rate,
+        "at_risk": at_risk,
+        "ltv": ltv,
+        "cac": cac,
+        "top_channel": top_channel,
+        "acquisition_cost": acquisition_cost,
         "retention_rate": retention_rate
     })
 
@@ -345,10 +321,14 @@ def metrics():
         """, (user_id,))
         rows = cursor.fetchall()
         if not rows:
-            return jsonify({"revenue": {"total": 0, "trend": "0%", "history": {"labels": [], "values": []}},
-                            "churn": {"rate": 0, "at_risk": 0}, "performance": {"ratio": "0"},
-                            "acquisition": {"top_channel": "", "acquisition_cost": 0}, "retention": {"rate": 0},
-                            "ai_insight": "Connect integrations to unlock real insights."})
+            return jsonify({
+                "revenue": {"total": 0, "trend": "0%", "history": {"labels": [], "values": []}},
+                "churn": {"rate": 0, "at_risk": 0},
+                "performance": {"ratio": "0", "ltv": 150, "cac": 50},
+                "acquisition": {"top_channel": "", "acquisition_cost": 0},
+                "retention": {"rate": 0},
+                "ai_insight": "Connect integrations to unlock real insights."
+            })
 
         latest = rows[0]
         history_labels = [r[8][:10] for r in rows[::-1]]
@@ -398,7 +378,7 @@ def ai_chat():
         reply = resp.json()["choices"][0]["message"]["content"]
     except Exception as e:
         logging.error(f"Grok error: {e}")
-        reply = f"Based on your metrics: try reducing churn with emails."
+        reply = "Try reducing churn with targeted emails."
 
     return jsonify({"reply": reply})
 
@@ -422,7 +402,6 @@ def oauth_start(provider):
             'state': f"{user_id}|{shop}"
         }
         auth_url = f"https://{shop}/admin/oauth/authorize?{urlencode(params)}"
-        logging.info(f"Shopify OAuth URL: {auth_url}")
         return redirect(auth_url)
 
     elif provider == 'ga4':
@@ -432,15 +411,13 @@ def oauth_start(provider):
             'response_type': 'code',
             'scope': ' '.join([
                 'https://www.googleapis.com/auth/analytics.readonly',
-                'https://www.googleapis.com/auth/analytics.manage.users',
-                'https://www.googleapis.com/auth/userinfo.profile'
+                'https://www.googleapis.com/auth/analytics.manage.users'
             ]),
             'access_type': 'offline',
             'prompt': 'consent',
             'state': str(user_id)
         }
         auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}"
-        logging.info(f"GA4 OAuth URL: {auth_url}")
         return redirect(auth_url)
 
     elif provider == 'hubspot':
@@ -452,7 +429,6 @@ def oauth_start(provider):
             'state': str(user_id)
         }
         auth_url = f"https://app.hubspot.com/oauth/authorize?{urlencode(params)}"
-        logging.info(f"HubSpot OAuth URL: {auth_url}")
         return redirect(auth_url)
 
     return "Invalid provider", 400
@@ -479,16 +455,11 @@ def shopify_callback():
     payload = {'client_id': SHOPIFY_API_KEY, 'client_secret': SHOPIFY_CLIENT_SECRET, 'code': code}
     resp = requests.post(token_url, data=payload)
     if resp.status_code != 200:
-        logging.error(f"Shopify token fail: {resp.text}")
         return "Shopify auth failed", 400
-    token_data = resp.json()
-    access_token = token_data.get('access_token', '')
+    access_token = resp.json().get('access_token', '')
 
     with sqlite3.connect(DB_FILE) as conn:
-        conn.execute(
-            "UPDATE users SET shopify_shop = ?, shopify_access_token = ? WHERE email = ?",
-            (shop, access_token, user["email"])
-        )
+        conn.execute("UPDATE users SET shopify_shop = ?, shopify_access_token = ? WHERE id = ?", (shop, access_token, user_id))
         conn.commit()
 
     sync_data()
@@ -508,28 +479,30 @@ def ga4_callback():
 
     token_url = "https://oauth2.googleapis.com/token"
     payload = {
-        'code': code, 'client_id': GOOGLE_CLIENT_ID, 'client_secret': GOOGLE_CLIENT_SECRET,
-        'redirect_uri': f"{DOMAIN}/auth/ga4/callback", 'grant_type': 'authorization_code'
+        'code': code,
+        'client_id': GOOGLE_CLIENT_ID,
+        'client_secret': GOOGLE_CLIENT_SECRET,
+        'redirect_uri': f"{DOMAIN}/auth/ga4/callback",
+        'grant_type': 'authorization_code'
     }
     resp = requests.post(token_url, data=payload)
     if resp.status_code != 200:
-        logging.error(f"GA4 token fail: {resp.text}")
         return "GA4 auth failed", 400
     token_data = resp.json()
     access_token = token_data.get('access_token', '')
     refresh_token = token_data.get('refresh_token', '')
 
-    # Fixed: Use correct Admin API URL for current user properties (was 404)
+    # FIXED: Correct Admin API to list properties
     property_id = ''
     try:
-        admin_url = "https://analyticsadmin.googleapis.com/v1beta/accounts/~ /properties"  # ~ for current account
+        admin_url = "https://analyticsadmin.googleapis.com/v1beta/properties"
         props_resp = requests.get(admin_url, headers={'Authorization': f'Bearer {access_token}'})
         if props_resp.status_code == 200:
             props = props_resp.json().get('properties', [])
-            if not props:
-                logging.warning(f"No GA4 properties found for user {user_id}")
-                return "No GA4 properties found. Please create one in Google Analytics.", 400
-            property_id = props[0].get('name', '').split('/')[-1]  # e.g., "123"
+            if props:
+                property_id = props[0].get('name', '').split('/')[-1]
+            else:
+                return "No GA4 properties found. Create one in Google Analytics.", 400
         else:
             logging.error(f"GA4 properties fetch failed: {props_resp.text}")
     except Exception as e:
@@ -538,8 +511,8 @@ def ga4_callback():
     with sqlite3.connect(DB_FILE) as conn:
         conn.execute("""
             UPDATE users SET ga4_connected = 1, ga4_access_token = ?, ga4_refresh_token = ?, 
-            ga4_property_id = ?, ga4_last_refreshed = ? WHERE email = ?
-        """, (access_token, refresh_token, property_id, datetime.utcnow().isoformat(), user["email"]))
+            ga4_property_id = ?, ga4_last_refreshed = ? WHERE id = ?
+        """, (access_token, refresh_token, property_id, datetime.utcnow().isoformat(), user_id))
         conn.commit()
 
     sync_data()
@@ -559,12 +532,14 @@ def hubspot_callback():
 
     token_url = "https://api.hubapi.com/oauth/v1/token"
     payload = {
-        'grant_type': 'authorization_code', 'client_id': HUBSPOT_CLIENT_ID,
-        'client_secret': HUBSPOT_CLIENT_SECRET, 'redirect_uri': f"{DOMAIN}/auth/hubspot/callback", 'code': code
+        'grant_type': 'authorization_code',
+        'client_id': HUBSPOT_CLIENT_ID,
+        'client_secret': HUBSPOT_CLIENT_SECRET,
+        'redirect_uri': f"{DOMAIN}/auth/hubspot/callback",
+        'code': code
     }
     resp = requests.post(token_url, data=payload)
     if resp.status_code != 200:
-        logging.error(f"HubSpot token fail: {resp.text}")
         return "HubSpot auth failed", 400
     token_data = resp.json()
     access_token = token_data.get('access_token', '')
@@ -572,9 +547,8 @@ def hubspot_callback():
 
     with sqlite3.connect(DB_FILE) as conn:
         conn.execute("""
-            UPDATE users SET hubspot_connected = 1, hubspot_access_token = ?, 
-            hubspot_refresh_token = ? WHERE email = ?
-        """, (access_token, refresh_token, user["email"]))
+            UPDATE users SET hubspot_connected = 1, hubspot_access_token = ?, hubspot_refresh_token = ? WHERE id = ?
+        """, (access_token, refresh_token, user_id))
         conn.commit()
 
     sync_data()
@@ -584,14 +558,12 @@ def hubspot_callback():
 def health():
     return jsonify({"status": "ok", "time": datetime.utcnow().isoformat()})
 
-# === CATCH-ALL LAST (For non-matched paths) ===
+# === CATCH-ALL ===
 @app.route('/<path:path>', methods=['GET', 'POST', 'OPTIONS'])
-def static_files(path):
+def catch_all(path):
     if path.startswith('api/') or path.startswith('auth/'):
-        pass  # Let Flask route these (no return—handlers catch them)
-    else:
-        return redirect(FRONTEND_URL)
-    # Implicit: For OPTIONS preflight on API/auth, CORS handles 200
+        return "Not Found", 404
+    return redirect(FRONTEND_URL)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=int(os.getenv('PORT', 5000)), debug=False)
