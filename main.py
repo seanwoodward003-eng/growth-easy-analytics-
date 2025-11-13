@@ -27,11 +27,11 @@ HUBSPOT_CLIENT_ID = os.getenv('HUBSPOT_CLIENT_ID')
 HUBSPOT_CLIENT_SECRET = os.getenv('HUBSPOT_CLIENT_SECRET')
 
 # Updated: Use env var for flexibility (set FRONTEND_URL in Render env, e.g., https://your-frontend.com)
-FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://growth-easy-analytics-2.onrender.com')
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://growth-easy-analytics-main-26jk-pb10b9hc9.vercel.app/signup.html')
 
 # === CORS & LOGGING ===
 # Updated: Include Render backend, Vercel, and wildcard for dev
-CORS(app, origins=[FRONTEND_URL, DOMAIN, "https://growth-easy-analytics-main-26jk-seanwoodward003-engs-projects.vercel.app", "*"])
+CORS(app, origins=[FRONTEND_URL, DOMAIN, "https://growth-easy-analytics-main-26jk-pb10b9hc9.vercel.app/signup.html", "*"])
 logging.basicConfig(level=logging.INFO)
 
 # === SQLITE DATABASE ===
