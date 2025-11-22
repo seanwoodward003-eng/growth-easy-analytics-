@@ -422,6 +422,10 @@ def oauth_start(provider):
 def shopify_callback():
     code = request.args.get('code')
     state = request.args.get('state')
+    error = request.args.get('error')  # ← ADD THIS FOR DEBUG
+    if error:
+        return f"<script>alert('Shopify Error: {error}'); window.close(); window.opener.location.reload();</script>", 400
+    
     if not code or not state:
         return "Missing code or state", 400
 
@@ -439,20 +443,24 @@ def shopify_callback():
     payload = {'client_id': SHOPIFY_API_KEY, 'client_secret': SHOPIFY_CLIENT_SECRET, 'code': code}
     resp = requests.post(token_url, data=payload)
     if resp.status_code != 200:
-        return "Shopify auth failed", 400
+        return f"Shopify auth failed: {resp.text}", 400
     access_token = resp.json().get('access_token', '')
 
     with sqlite3.connect(DB_FILE) as conn:
         conn.execute("UPDATE users SET shopify_shop = ?, shopify_access_token = ? WHERE id = ?", (shop, access_token, user_id))
         conn.commit()
 
-    sync_data()
-    return f"<script>window.location.href = '{FRONTEND_URL}/index.html?connected=shopify'</script>"
+    # ← ADD THIS FOR BETTER DEBUG
+    return f"<script>alert('Shopify Connected!'); window.close(); window.opener.location.reload();</script>"
 
 @app.route('/auth/ga4/callback')
 def ga4_callback():
     code = request.args.get('code')
     state = request.args.get('state')
+    error = request.args.get('error')  # ← ADD THIS FOR DEBUG
+    if error:
+        return f"<script>alert('GA4 Error: {error}'); window.close(); window.opener.location.reload();</script>", 400
+    
     if not code or not state:
         return "Missing code or state", 400
 
@@ -471,7 +479,7 @@ def ga4_callback():
     }
     resp = requests.post(token_url, data=payload)
     if resp.status_code != 200:
-        return "GA4 auth failed", 400
+        return f"GA4 auth failed: {resp.text}", 400
     token_data = resp.json()
     access_token = token_data.get('access_token', '')
     refresh_token = token_data.get('refresh_token', '')
@@ -492,13 +500,17 @@ def ga4_callback():
         """, (access_token, refresh_token, property_id, datetime.utcnow().isoformat(), user_id))
         conn.commit()
 
-    sync_data()
-    return f"<script>window.location.href = '{FRONTEND_URL}/index.html?connected=ga4'</script>"
+    # ← ADD THIS FOR BETTER DEBUG
+    return f"<script>alert('GA4 Connected!'); window.close(); window.opener.location.reload();</script>"
 
 @app.route('/auth/hubspot/callback')
 def hubspot_callback():
     code = request.args.get('code')
     state = request.args.get('state')
+    error = request.args.get('error')  # ← ADD THIS FOR DEBUG
+    if error:
+        return f"<script>alert('HubSpot Error: {error}'); window.close(); window.opener.location.reload();</script>", 400
+    
     if not code or not state:
         return "Missing code or state", 400
 
@@ -517,7 +529,7 @@ def hubspot_callback():
     }
     resp = requests.post(token_url, data=payload)
     if resp.status_code != 200:
-        return "HubSpot auth failed", 400
+        return f"HubSpot auth failed: {resp.text}", 400
     token_data = resp.json()
     access_token = token_data.get('access_token', '')
     refresh_token = token_data.get('refresh_token', '')
@@ -528,8 +540,8 @@ def hubspot_callback():
         """, (access_token, refresh_token, user_id))
         conn.commit()
 
-    sync_data()
-    return f"<script>window.location.href = '{FRONTEND_URL}/index.html?connected=hubspot'</script>"
+    # ← ADD THIS FOR BETTER DEBUG
+    return f"<script>alert('HubSpot Connected!'); window.close(); window.opener.location.reload();</script>"
 
 @app.route('/health')
 def health():
