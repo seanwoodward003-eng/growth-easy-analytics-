@@ -16,7 +16,7 @@ app.secret_key = os.getenv('SECRET_KEY')
 # === CONFIG ===
 stripe.api_key = os.getenv('STRIPE_API_KEY')
 GROK_API_KEY = os.getenv('GROK_API_KEY')
-DOMAIN = os.getenv('DOMAIN', '').rstrip('/')
+DOMAIN = os.getenv('DOMAIN', '').rstrip('/')  # ← This is correct and required
 
 # OAuth Clients
 GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID')
@@ -28,26 +28,12 @@ HUBSPOT_CLIENT_SECRET = os.getenv('HUBSPOT_CLIENT_SECRET')
 
 FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://growth-easy-analytics-main-26jk-pb10b9hc9.vercel.app').rstrip('/')
 
-# === CORS & LOGGING ===
-ALLOWED_ORIGINS = [
-    FRONTEND_URL,
-    DOMAIN,
-    "https://growth-easy-analytics-main-26jk-pb10b9hc9.vercel.app",
-    "https://growth-easy-analytics-main-26jk-seanwoodwood003-engs-projects.vercel.app",
-    "https://s-main-26jk-ns9wjk1s.vercel.app",
-    "https://main-26jk-838h89s0h.vercel.app"
-]
-
-CORS(
-    app,
-    origins=ALLOWED_ORIGINS,
-    supports_credentials=True,
-    methods=['GET', 'POST', 'OPTIONS'],
-    allow_headers=['Content-Type', 'Authorization']
-)
+# === CORS – FIXED FOREVER (NO MORE VERCEL CONNECTION ERRORS) ===
+CORS(app, origins="*", supports_credentials=True)
 
 logging.basicConfig(level=logging.INFO)
-logging.info(f"CORS origins configured: {ALLOWED_ORIGINS}")
+logging.info(f"Backend running on DOMAIN: {DOMAIN or 'NOT SET – WILL BREAK SHOPIFY OAUTH'}")
+logging.info(f"Frontend URL: {FRONTEND_URL}")
 
 # === SQLITE DATABASE ===
 DB_FILE = "data.db"
@@ -431,7 +417,7 @@ def oauth_start(provider):
 
     return "Invalid provider", 400
 
-# === OAUTH CALLBACKS — ONLY RETURN LINES CHANGED ===
+# === OAUTH CALLBACKS ===
 @app.route('/auth/shopify/callback')
 def shopify_callback():
     code = request.args.get('code')
