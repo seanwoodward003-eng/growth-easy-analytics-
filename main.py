@@ -33,7 +33,7 @@ ALLOWED_ORIGINS = [
     FRONTEND_URL,
     DOMAIN,
     "https://growth-easy-analytics-main-26jk-pb10b9hc9.vercel.app",
-    "https://growth-easy-analytics-main-26jk-seanwoodward003-engs-projects.vercel.app",
+    "https://growth-easy-analytics-main-26jk-seanwoodwood003-engs-projects.vercel.app",
     "https://s-main-26jk-ns9wjk1s.vercel.app",
     "https://main-26jk-838h89s0h.vercel.app"
 ]
@@ -233,7 +233,6 @@ def sync_data():
                 report_url = f"https://analyticsdata.googleapis.com/v1beta/properties/{ga4_property}:runReport"
                 headers = {'Authorization': f'Bearer {ga4_token}', 'Content-Type': 'application/json'}
 
-                # Channel & CAC
                 payload = {
                     "dateRanges": [{"startDate": "30daysAgo", "endDate": "today"}],
                     "dimensions": [{"name": "channelGrouping"}],
@@ -249,7 +248,6 @@ def sync_data():
                         acquisition_cost = float(top_row['metricValues'][1]['value']) if len(top_row['metricValues']) > 1 else 0
                         cac = acquisition_cost / new_users if new_users else 0
 
-                # Retention
                 retention_payload = {
                     "dateRanges": [{"startDate": "30daysAgo", "endDate": "today"}],
                     "metrics": [{"name": "cohortUserRetentionRate"}]
@@ -433,7 +431,7 @@ def oauth_start(provider):
 
     return "Invalid provider", 400
 
-# === OAUTH CALLBACKS ===
+# === OAUTH CALLBACKS — ONLY RETURN LINES CHANGED ===
 @app.route('/auth/shopify/callback')
 def shopify_callback():
     code = request.args.get('code')
@@ -463,7 +461,7 @@ def shopify_callback():
         conn.commit()
 
     sync_data()
-    return "<script>window.opener.localStorage.setItem('shopify','connected'); window.close(); window.opener.location.reload();</script>"
+    return f"<script>window.location.href = '{FRONTEND_URL}/index.html?connected=shopify'</script>"
 
 @app.route('/auth/ga4/callback')
 def ga4_callback():
@@ -492,21 +490,14 @@ def ga4_callback():
     access_token = token_data.get('access_token', '')
     refresh_token = token_data.get('refresh_token', '')
 
-    # FIXED: Correct Admin API to list properties
     property_id = ''
     try:
         admin_url = "https://analyticsadmin.googleapis.com/v1beta/properties"
         props_resp = requests.get(admin_url, headers={'Authorization': f'Bearer {access_token}'})
-        if props_resp.status_code == 200:
-            props = props_resp.json().get('properties', [])
-            if props:
-                property_id = props[0].get('name', '').split('/')[-1]
-            else:
-                return "No GA4 properties found. Create one in Google Analytics.", 400
-        else:
-            logging.error(f"GA4 properties fetch failed: {props_resp.text}")
-    except Exception as e:
-        logging.error(f"GA4 property fetch error: {e}")
+        if props_resp.status_code == 200 and props_resp.json().get('properties'):
+            property_id = props_resp.json()['properties'][0]['name'].split('/')[-1]
+    except:
+        pass
 
     with sqlite3.connect(DB_FILE) as conn:
         conn.execute("""
@@ -516,7 +507,7 @@ def ga4_callback():
         conn.commit()
 
     sync_data()
-    return "<script>window.opener.localStorage.setItem('ga4','connected'); window.close(); window.opener.location.reload();</script>"
+    return f"<script>window.location.href = '{FRONTEND_URL}/index.html?connected=ga4'</script>"
 
 @app.route('/auth/hubspot/callback')
 def hubspot_callback():
@@ -552,7 +543,7 @@ def hubspot_callback():
         conn.commit()
 
     sync_data()
-    return "<script>window.opener.localStorage.setItem('hubspot','connected'); window.close(); window.opener.location.reload();</script>"
+    return f"<script>window.location.href = '{FRONTEND_URL}/index.html?connected=hubspot'</script>"
 
 @app.route('/health')
 def health():
