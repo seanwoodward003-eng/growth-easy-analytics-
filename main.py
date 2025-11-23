@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, redirect, make_response  # ← added make_response
+from flask import Flask, request, jsonify, redirect, make_response
 import stripe
 import requests
 import jwt
@@ -9,8 +9,8 @@ from urllib.parse import urlencode
 from flask_cors import CORS
 from dateutil.relativedelta import relativedelta
 import logging
-import hmac  # ← added for Shopify HMAC
-import hashlib  # ← added for Shopify HMAC
+import hmac
+import hashlib
 
 app = Flask(__name__, static_folder='.', static_url_path='')
 app.secret_key = os.getenv('SECRET_KEY')
@@ -18,7 +18,7 @@ app.secret_key = os.getenv('SECRET_KEY')
 # === CONFIG ===
 stripe.api_key = os.getenv('STRIPE_API_KEY')
 GROK_API_KEY = os.getenv('GROK_API_KEY')
-DOMAIN = os.getenv('DOMAIN', '').rstrip('/')  # ← This is correct and required
+DOMAIN = os.getenv('DOMAIN', '').rstrip('/')  
 
 # OAuth Clients
 GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID')
@@ -30,11 +30,11 @@ HUBSPOT_CLIENT_SECRET = os.getenv('HUBSPOT_CLIENT_SECRET')
 
 FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://growth-easy-analytics-main-26jk-pb10b9hc9.vercel.app').rstrip('/')
 
-# === CORS – FIXED FOREVER (NO MORE VERCEL CONNECTION ERRORS) ===
+# === CORS ===
 CORS(app, origins="*", supports_credentials=True)
 
 logging.basicConfig(level=logging.INFO)
-logging.info(f"Backend running on DOMAIN: {DOMAIN or 'NOT SET – WILL BREAK SHOPIFY OAUTH'}")
+logging.info(f"Backend running on DOMAIN: {DOMAIN or 'NOT SET'}")
 logging.info(f"Frontend URL: {FRONTEND_URL}")
 
 # === SQLITE DATABASE ===
@@ -116,11 +116,12 @@ def require_auth():
 def index():
     return redirect(FRONTEND_URL)
 
-# === SIGNUP + STRIPE TRIAL – FIXED WITH CROSS-DOMAIN COOKIE ===
+# === FINAL FIXED /create-trial (CROSS-DOMAIN COOKIE) ===
 @app.route('/create-trial', methods=['POST', 'OPTIONS'])
 def create_trial():
     if request.method == 'OPTIONS':
         return '', 200
+
     email = request.json.get('email', '').strip().lower()
     consent = request.json.get('consent', False)
     if not email or '@' not in email or '.' not in email or not consent:
@@ -134,15 +135,14 @@ def create_trial():
             trial_period_days=7
         )
     except stripe.error.StripeError as e:
-        error_msg = getattr(e, 'user_message', str(e)) if hasattr(e, 'user_message') else f'StripeError: {e.__class__.__name__}'
-        logging.error(f"Stripe error for email {email}: {error_msg}")
+        logging.error(f"Stripe error: {e}")
         return jsonify({"error": "Payment setup failed—try again."}), 400
 
     with sqlite3.connect(DB_FILE) as conn:
         cursor = conn.cursor()
         cursor.execute(
             "INSERT OR IGNORE INTO users (email, stripe_id, gdpr_consented) VALUES (?, ?, ?)",
-            (email, customer.id, 1)
+ (email, customer.id, 1)
         )
         conn.commit()
         user_id = cursor.lastrowid or cursor.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()[0]
@@ -152,7 +152,6 @@ def create_trial():
         app.secret_key, algorithm="HS256"
     )
 
-    # ←←← THIS IS THE ONLY CHANGE IN THIS ROUTE (cross-domain cookie)
     resp = make_response(jsonify({
         "success": True,
         "redirect": f"{FRONTEND_URL}/index.html"
@@ -162,12 +161,12 @@ def create_trial():
         max_age=604800,
         secure=True,
         httponly=True,
-        samesite='None',   # ← This fixes Vercel + Render
+        samesite='None',
         path='/'
     )
     return resp
 
-# === DATA SYNC === (100% unchanged)
+# === DATA SYNC (unchanged) ===
 @app.route('/api/sync', methods=['POST', 'OPTIONS'])
 def sync_data():
     if request.method == 'OPTIONS':
@@ -195,7 +194,6 @@ def sync_data():
         revenue = churn_rate = at_risk = ltv = cac = acquisition_cost = retention_rate = 0
         top_channel = ''
 
-        # === SHOPIFY ===
         if shop and shop_token:
             try:
                 orders_resp = requests.get(
@@ -224,7 +222,6 @@ def sync_data():
             except Exception as e:
                 logging.error(f"Shopify sync error (user {user_id}): {e}")
 
-        # === GA4 ===
         if ga4_property and ga4_token:
             try:
                 report_url = f"https://analyticsdata.googleapis.com/v1beta/properties/{ga4_property}:runReport"
@@ -257,7 +254,6 @@ def sync_data():
             except Exception as e:
                 logging.error(f"GA4 sync error (user {user_id}): {e}")
 
-        # === HUBSPOT ===
         if hubspot_refresh and hubspot_access:
             try:
                 contacts_url = "https://api.hubapi.com/crm/v3/objects/contacts?properties=hs_lifecyclestage"
@@ -293,7 +289,7 @@ def sync_data():
         "retention_rate": retention_rate
     })
 
-# === METRICS === (unchanged)
+# === METRICS (unchanged) ===
 @app.route('/api/metrics', methods=['GET', 'OPTIONS'])
 def metrics():
     if request.method == 'OPTIONS':
@@ -339,7 +335,7 @@ def metrics():
             "ai_insight": f"Churn {latest[1] or 0:.1f}% – Send win-backs to {latest[2] or 0} at-risk to save £{(latest[0] or 0) * (latest[1] or 0) / 100:.0f}/mo."
         })
 
-# === AI CHAT === (unchanged)
+# === AI CHAT (unchanged) ===
 @app.route('/api/chat', methods=['POST', 'OPTIONS'])
 def ai_chat():
     if request.method == 'OPTIONS':
@@ -377,7 +373,7 @@ def ai_chat():
 
     return jsonify({"reply": reply})
 
-# === OAUTH START === (unchanged)
+# === OAUTH START (unchanged) ===
 @app.route('/auth/<provider>')
 def oauth_start(provider):
     user = get_user_from_token()
@@ -428,7 +424,7 @@ def oauth_start(provider):
 
     return "Invalid provider", 400
 
-# === SHOPIFY CALLBACK – FIXED WITH HMAC VALIDATION ===
+# === SHOPIFY CALLBACK WITH HMAC ===
 @app.route('/auth/shopify/callback')
 def shopify_callback():
     code = request.args.get('code')
@@ -439,7 +435,6 @@ def shopify_callback():
     if error:
         return f"<script>alert('Shopify Error: {error}'); window.close(); window.opener.location.reload();</script>", 400
 
-    # HMAC VALIDATION (required by Shopify)
     if hmac_received:
         params = request.args.copy()
         params.pop('hmac', None)
@@ -447,7 +442,7 @@ def shopify_callback():
         message = '&'.join(f"{k}={v}" for k, v in sorted(params.items()))
         calculated = hmac.new(SHOPIFY_CLIENT_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(calculated, hmac_received):
-            return "<script>alert('Security check failed – check your Shopify secret'); window.close();</script>", 400
+            return "<script>alert('Security check failed'); window.close();</script>", 400
 
     if not code or not state:
         return "Missing code or state", 400
@@ -460,7 +455,7 @@ def shopify_callback():
 
     user = get_user_from_token()
     if not user or user["id"] != user_id:
-        return "Unauthorized – please log in again", 401
+        return "Unauthorized", 401
 
     token_url = f"https://{shop}/admin/oauth/access_token"
     payload = {'client_id': SHOPIFY_API_KEY, 'client_secret': SHOPIFY_CLIENT_SECRET, 'code': code}
@@ -475,7 +470,7 @@ def shopify_callback():
 
     return "<script>alert('Shopify Connected Successfully!'); window.close(); window.opener.location.reload();</script>"
 
-# === GA4 & HUBSPOT CALLBACKS (unchanged – now work because of cookie fix) ===
+# === GA4 & HUBSPOT CALLBACKS (unchanged) ===
 @app.route('/auth/ga4/callback')
 def ga4_callback():
     code = request.args.get('code')
@@ -568,7 +563,6 @@ def hubspot_callback():
 def health():
     return jsonify({"status": "ok", "time": datetime.utcnow().isoformat()})
 
-# === CATCH-ALL ===
 @app.route('/<path:path>', methods=['GET', 'POST', 'OPTIONS'])
 def catch_all(path):
     if path.startswith('api/') or path.startswith('auth/'):
