@@ -33,10 +33,13 @@ DOMAIN = os.getenv('DOMAIN', '').rstrip('/')
 if not DOMAIN or not DOMAIN.startswith('https://'):
     raise ValueError("DOMAIN must be your full Render URL: https://your-app.onrender.com")
 
-FRONTEND_URL = os.getenv('FRONTEND_URL', '').rstrip('/')
-if not FRONTEND_URL or not FRONTEND_URL.startswith('https://'):
-    raise ValueError("FRONTEND_URL must be your Vercel URL")
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://growth-easy-analytics-main-f57a.vercel.app').rstrip('/')
 
+# Only warn in logs, never crash the whole app
+if not FRONTEND_URL.startswith('https://'):
+    print(f"WARNING: FRONTEND_URL is not HTTPS: {FRONTEND_URL}")
+    print("Falling back to default Vercel URL")
+    FRONTEND_URL = 'https://growth-easy-analytics-main-f57a.vercel.app'
 # OAuth Clients
 GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID')
 GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET')
