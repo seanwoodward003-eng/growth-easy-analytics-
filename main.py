@@ -451,7 +451,7 @@ def metrics():
         rows = cursor.fetchall()
         if not rows:
             return jsonify({
-                "revenue": {"total": 0, "trend": "0%", "history": [], "values": []}},
+                "revenue": {"total": 0, "trend": "0%", "history": {"labels": [], "values": []}},
                 "churn": {"rate": 0, "at_risk": 0},
                 "performance": {"ratio": "0", "ltv": 150, "cac": 50},
                 "acquisition": {"top_channel": "", "acquisition_cost": 0},
@@ -472,6 +472,7 @@ def metrics():
             "retention": {"rate": latest[7] or 85},
             "ai_insight": f"Churn {latest[1] or 0:.1f}% – Send win-backs to {latest[2] or 0} at-risk to save £{(latest[0] or 0) * (latest[1] or 0) / 100:.0f}/mo."
         })
+        
 
 # === AI CHAT ===
 @app.route('/api/chat', methods=['POST', 'OPTIONS'])
