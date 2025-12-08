@@ -572,7 +572,3 @@ def catch_all(path):
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', 5000)), debug=False)
 
-
-Do you think we should approach the marketing differently instead and focus on smaller amount of DMs but quality leads. And only messsge on linked in and email. Stay personal. Aiming for 100 messages a day accross email and linked in. Otherwise we are messaging in bulk and quality over quantity. What do you think and don’t sugar coat the answer. I think we should use insta, x and tik tok for content and hit up serious customers on linked in an emailing
-
-Cool and finally we need to change our dm structure, stop selling the product and sell the benefits and show how we help and that were genuine
