@@ -201,7 +201,7 @@ def refresh_token():
         return jsonify({"error": "Invalid refresh token"}), 401
 
 # === CREATE TRIAL — FIXED STRIPE TRIAL + PER-EMAIL LIMIT ===
-@app.route('/create-trial', methods=['POST', 'OPTIONS'])
+@app.route('/api/signup', methods=['POST', 'OPTIONS'])
 @limiter.limit("3 per minute", key_func=lambda: request.json.get('email', '').lower())
 def create_trial():
     if request.method == 'OPTIONS':
