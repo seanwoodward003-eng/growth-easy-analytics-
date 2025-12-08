@@ -1,24 +1,36 @@
+# main.py — FULLY SECURE PRODUCTION BACKEND (Vercel Frontend + Render Backend)
 from flask import Flask, request, jsonify, redirect, make_response
 import stripe
 import requests
 import jwt
 import sqlite3
 import os
+import secrets
+import hmac
+import hashlib
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
 from flask_cors import CORS
 from dateutil.relativedelta import relativedelta
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 import logging
-import hmac
-import hashlib
 
 app = Flask(__name__, static_folder='.', static_url_path='')
 app.secret_key = os.getenv('SECRET_KEY')
+JWT_SECRET = os.getenv('JWT_SECRET', app.secret_key)  # Use dedicated secret
 
 # === CONFIG ===
 stripe.api_key = os.getenv('STRIPE_API_KEY')
 GROK_API_KEY = os.getenv('GROK_API_KEY')
-DOMAIN = os.getenv('DOMAIN', '').rstrip('/')  
+
+DOMAIN = os.getenv('DOMAIN', '').rstrip('/')
+if not DOMAIN or not DOMAIN.startswith('https://'):
+    raise ValueError("DOMAIN must be your full Render URL: https://your-app.onrender.com")
+
+FRONTEND_URL = os.getenv('FRONTEND_URL', '').rstrip('/')
+if not FRONTEND_URL or not FRONTEND_URL.startswith('https://'):
+    raise ValueError("FRONTEND_URL must be your Vercel URL")
 
 # OAuth Clients
 GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID')
@@ -28,16 +40,29 @@ SHOPIFY_CLIENT_SECRET = os.getenv('SHOPIFY_CLIENT_SECRET')
 HUBSPOT_CLIENT_ID = os.getenv('HUBSPOT_CLIENT_ID')
 HUBSPOT_CLIENT_SECRET = os.getenv('HUBSPOT_CLIENT_SECRET')
 
-FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://growth-easy-analytics-main-26jk-pb10b9hc9.vercel.app').rstrip('/')
-
-# === CORS ===
-CORS(app, origins="*", supports_credentials=True)
+# Security
+limiter = Limiter(app=app, key_func=get_remote_address, default_limits=["500 per day", "100 per hour"])
+CORS(app, origins=[FRONTEND_URL], supports_credentials=True)
 
 logging.basicConfig(level=logging.INFO)
-logging.info(f"Backend running on DOMAIN: {DOMAIN or 'NOT SET'}")
-logging.info(f"Frontend URL: {FRONTEND_URL}")
+logger = logging.getLogger(__name__)
 
-# === SQLITE DATABASE ===
+# Force HTTPS + secure headers
+@app.before_request
+def enforce_https():
+    if not request.is_secure and 'localhost' not in request.host and not app.debug:
+        return redirect(request.url.replace('http://', 'https://', 1), code=301)
+
+@app.after_request
+def security_headers(response):
+    response.headers['Access-Control-Allow-Origin'] = FRONTEND_URL
+    response.headers['Access-Control-Allow-Credentials'] = 'true'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-CSRF-Token'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    response.headers['Vary'] = 'Origin'
+    return response
+
+# === DATABASE ===
 DB_FILE = "data.db"
 
 def init_db():
@@ -90,16 +115,17 @@ def init_db():
                 FOREIGN KEY(user_id) REFERENCES users(id)
             )
         """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_metrics_user ON metrics(user_id)")
         conn.commit()
 init_db()
 
-# === AUTH HELPERS ===
+# === AUTH & CSRF ===
 def get_user_from_token():
     token = request.cookies.get('token')
     if not token:
         return None
     try:
-        payload = jwt.decode(token, app.secret_key, algorithms=["HS256"])
+        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
         return {"id": int(payload["sub"]), "email": payload.get("email")}
     except Exception as e:
         logging.warning(f"JWT decode error: {e}")
@@ -111,13 +137,16 @@ def require_auth():
         return jsonify({"error": "Unauthorized"}), 401
     return user
 
-# === ROUTES ===
-@app.route('/')
-def index():
-    return redirect(FRONTEND_URL)
+def verify_csrf():
+    cookie = request.cookies.get('csrf_token')
+    header = request.headers.get('X-CSRF-Token')
+    if not cookie or not header:
+        return False
+    return hmac.compare_digest(cookie, header)
 
-# === FINAL FIXED /create-trial (CROSS-DOMAIN COOKIE) ===
+# === CREATE TRIAL (SECURE) ===
 @app.route('/create-trial', methods=['POST', 'OPTIONS'])
+@limiter.limit("5 per minute")
 def create_trial():
     if request.method == 'OPTIONS':
         return '', 200
@@ -132,45 +161,69 @@ def create_trial():
         stripe.Subscription.create(
             customer=customer.id,
             items=[{"price": os.getenv('STRIPE_PRICE_ID')}],
-            trial_period_days=7
+            trial_period_days=7,
+            trial_settings={"end_behavior": {"missing_payment_method": "cancel"}}
         )
     except stripe.error.StripeError as e:
-        logging.error(f"Stripe error: {e}")
+        logger.error(f"Stripe error: {e}")
         return jsonify({"error": "Payment setup failed—try again."}), 400
 
     with sqlite3.connect(DB_FILE) as conn:
         cursor = conn.cursor()
         cursor.execute(
             "INSERT OR IGNORE INTO users (email, stripe_id, gdpr_consented) VALUES (?, ?, ?)",
- (email, customer.id, 1)
+            (email, customer.id, 1)
         )
+        if cursor.rowcount == 0:
+            cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
+        user_id = cursor.fetchone()[0]
         conn.commit()
-        user_id = cursor.lastrowid or cursor.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()[0]
 
     token = jwt.encode(
-        {"sub": str(user_id), "email": email, "exp": datetime.utcnow() + timedelta(days=7)},
-        app.secret_key, algorithm="HS256"
+        {"sub": str(user_id), "email": email, "exp": datetime.utcnow() + timedelta(days=30)},
+        JWT_SECRET, algorithm="HS256"
     )
+    csrf_token = secrets.token_hex(32)
 
     resp = make_response(jsonify({
         "success": True,
-        "redirect": f"{FRONTEND_URL}/index.html"
+        "redirect": f"{FRONTEND_URL}/dashboard"
     }), 200)
-    resp.set_cookie(
-        'token', token,
-        max_age=604800,
-        secure=True,
-        httponly=True,
-        samesite='None',
-        path='/'
-    )
+    resp.set_cookie('token', token, max_age=60*60*24*30, secure=True, httponly=True, samesite='None', path='/')
+    resp.set_cookie('csrf_token', csrf_token, max_age=60*60*24*30, secure=True, httponly=False, samesite='None', path='/')
     return resp
 
-# === DATA SYNC (unchanged) ===
+# === GA4 TOKEN REFRESH ===
+def refresh_ga4_token(user_id):
+    with sqlite3.connect(DB_FILE) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT ga4_refresh_token FROM users WHERE id = ?", (user_id,))
+        row = cursor.fetchone()
+        if not row or not row[0]:
+            return None
+        resp = requests.post("https://oauth2.googleapis.com/token", data={
+            'client_id': GOOGLE_CLIENT_ID,
+            'client_secret': GOOGLE_CLIENT_SECRET,
+            'refresh_token': row[0],
+            'grant_type': 'refresh_token'
+        })
+        if resp.status_code == 200:
+            access_token = resp.json()['access_token']
+            cursor.execute("UPDATE users SET ga4_access_token = ?, ga4_last_refreshed = ? WHERE id = ?",
+                           (access_token, datetime.utcnow().isoformat(), user_id))
+            conn.commit()
+            return access_token
+    return None
+
+# === FULL SYNC (with GA4 refresh) ===
 @app.route('/api/sync', methods=['POST', 'OPTIONS'])
+@limiter.limit("10 per minute")
 def sync_data():
     if request.method == 'OPTIONS':
         return '', 200
+    if not verify_csrf():
+        return jsonify({"error": "CSRF validation failed"}), 403
+
     user = require_auth()
     if isinstance(user, tuple):
         return user
@@ -180,14 +233,14 @@ def sync_data():
         cursor = conn.cursor()
         cursor.execute("""
             SELECT shopify_shop, shopify_access_token, ga4_access_token, ga4_refresh_token, 
-                   ga4_property_id, hubspot_refresh_token, hubspot_access_token
+                   ga4_property_id, hubspot_refresh_token, hubspot_access_token, ga4_last_refreshed
             FROM users WHERE id=?
         """, (user_id,))
         row = cursor.fetchone()
         if not row:
             return jsonify({"error": "No user data"}), 400
 
-        shop, shop_token, ga4_token, ga4_refresh, ga4_property, hubspot_refresh, hubspot_access = row
+        shop, shop_token, ga4_token, ga4_refresh, ga4_property, hubspot_refresh, hubspot_access, ga4_last_refreshed = row
         now = datetime.utcnow()
         month_ago = now - relativedelta(months=1)
 
@@ -202,7 +255,7 @@ def sync_data():
                 )
                 if orders_resp.status_code == 200:
                     orders = orders_resp.json().get('orders', [])
-                    revenue = sum(float(o['total_price']) for o in orders[-30:])
+                    revenue = sum(float(o['total_price']) for o in orders[-30:] if o.get('total_price'))
                     canceled = len([o for o in orders if o.get('cancelled_at')])
                     total_orders = len(orders)
                     churn_rate = (canceled / total_orders * 100) if total_orders else 0
@@ -220,9 +273,12 @@ def sync_data():
                         inactive = len([c for c in customers if c.get('orders_count', 0) == 0])
                         at_risk = max(at_risk, inactive)
             except Exception as e:
-                logging.error(f"Shopify sync error (user {user_id}): {e}")
+                logger.error(f"Shopify sync error (user {user_id}): {e}")
 
         if ga4_property and ga4_token:
+            if not ga4_last_refreshed or datetime.fromisoformat(ga4_last_refreshed) < datetime.utcnow() - timedelta(minutes=50):
+                ga4_token = refresh_ga4_token(user_id) or ga4_token
+
             try:
                 report_url = f"https://analyticsdata.googleapis.com/v1beta/properties/{ga4_property}:runReport"
                 headers = {'Authorization': f'Bearer {ga4_token}', 'Content-Type': 'application/json'}
@@ -252,7 +308,7 @@ def sync_data():
                     retention_rate = float(r_rows[0]['metricValues'][0]['value']) * 100 if r_rows else 85
 
             except Exception as e:
-                logging.error(f"GA4 sync error (user {user_id}): {e}")
+                logger.error(f"GA4 sync error (user {user_id}): {e}")
 
         if hubspot_refresh and hubspot_access:
             try:
@@ -265,7 +321,7 @@ def sync_data():
                     total = len(contacts)
                     retention_rate = (retained / total * 100) if total else 0
             except Exception as e:
-                logging.error(f"HubSpot sync error (user {user_id}): {e}")
+                logger.error(f"HubSpot sync error (user {user_id}): {e}")
 
         if not cac and revenue:
             cac = revenue * 0.05
@@ -289,7 +345,7 @@ def sync_data():
         "retention_rate": retention_rate
     })
 
-# === METRICS (unchanged) ===
+# === METRICS ===
 @app.route('/api/metrics', methods=['GET', 'OPTIONS'])
 def metrics():
     if request.method == 'OPTIONS':
@@ -335,11 +391,14 @@ def metrics():
             "ai_insight": f"Churn {latest[1] or 0:.1f}% – Send win-backs to {latest[2] or 0} at-risk to save £{(latest[0] or 0) * (latest[1] or 0) / 100:.0f}/mo."
         })
 
-# === AI CHAT (unchanged) ===
+# === AI CHAT ===
 @app.route('/api/chat', methods=['POST', 'OPTIONS'])
+@limiter.limit("20 per minute")
 def ai_chat():
     if request.method == 'OPTIONS':
         return '', 200
+    if not verify_csrf():
+        return jsonify({"error": "CSRF failed"}), 403
     user = require_auth()
     if isinstance(user, tuple):
         return user
@@ -368,12 +427,12 @@ def ai_chat():
         resp.raise_for_status()
         reply = resp.json()["choices"][0]["message"]["content"]
     except Exception as e:
-        logging.error(f"Grok error: {e}")
+        logger.error(f"Grok error: {e}")
         reply = "Try reducing churn with targeted emails."
 
     return jsonify({"reply": reply})
 
-# === OAUTH START (unchanged) ===
+# === OAUTH START ===
 @app.route('/auth/<provider>')
 def oauth_start(provider):
     user = get_user_from_token()
@@ -424,28 +483,27 @@ def oauth_start(provider):
 
     return "Invalid provider", 400
 
-# === SHOPIFY CALLBACK WITH HMAC ===
+# === SHOPIFY CALLBACK (FIXED HMAC) ===
+def verify_shopify_hmac(params):
+    hmac_sig = params.get('hmac')
+    if not hmac_sig:
+        return False
+    clean_params = {k: v for k, v in params.items() if k not in ['hmac', 'signature']}
+    message = '&'.join(f"{k}={v}" for k, v in sorted(clean_params.items()))
+    digest = hmac.new(SHOPIFY_CLIENT_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(digest, hmac_sig)
+
 @app.route('/auth/shopify/callback')
 def shopify_callback():
+    if not verify_shopify_hmac(request.args):
+        return "<script>alert('Invalid Shopify signature'); window.close();</script>", 400
+
     code = request.args.get('code')
     state = request.args.get('state')
     error = request.args.get('error')
-    hmac_received = request.args.get('hmac')
 
-    if error:
-        return f"<script>alert('Shopify Error: {error}'); window.close(); window.opener.location.reload();</script>", 400
-
-    if hmac_received:
-        params = request.args.copy()
-        params.pop('hmac', None)
-        params.pop('signature', None)
-        message = '&'.join(f"{k}={v}" for k, v in sorted(params.items()))
-        calculated = hmac.new(SHOPIFY_CLIENT_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(calculated, hmac_received):
-            return "<script>alert('Security check failed'); window.close();</script>", 400
-
-    if not code or not state:
-        return "Missing code or state", 400
+    if error or not code or not state:
+        return "<script>alert('Shopify auth failed'); window.close();</script>", 400
 
     try:
         user_id, shop = state.split('|', 1)
@@ -476,12 +534,9 @@ def ga4_callback():
     code = request.args.get('code')
     state = request.args.get('state')
     error = request.args.get('error')
-    if error:
-        return f"<script>alert('GA4 Error: {error}'); window.close(); window.opener.location.reload();</script>", 400
+    if error or not code or not state:
+        return "<script>alert('GA4 Error'); window.close(); window.opener.location.reload();</script>", 400
     
-    if not code or not state:
-        return "Missing code or state", 400
-
     user_id = int(state)
     user = get_user_from_token()
     if not user or user["id"] != user_id:
@@ -518,19 +573,16 @@ def ga4_callback():
         """, (access_token, refresh_token, property_id, datetime.utcnow().isoformat(), user_id))
         conn.commit()
 
-    return f"<script>alert('GA4 Connected!'); window.close(); window.opener.location.reload();</script>"
+    return "<script>alert('GA4 Connected!'); window.close(); window.opener.location.reload();</script>"
 
 @app.route('/auth/hubspot/callback')
 def hubspot_callback():
     code = request.args.get('code')
     state = request.args.get('state')
     error = request.args.get('error')
-    if error:
-        return f"<script>alert('HubSpot Error: {error}'); window.close(); window.opener.location.reload();</script>", 400
+    if error or not code or not state:
+        return "<script>alert('HubSpot Error'); window.close(); window.opener.location.reload();</script>", 400
     
-    if not code or not state:
-        return "Missing code or state", 400
-
     user_id = int(state)
     user = get_user_from_token()
     if not user or user["id"] != user_id:
@@ -557,13 +609,13 @@ def hubspot_callback():
         """, (access_token, refresh_token, user_id))
         conn.commit()
 
-    return f"<script>alert('HubSpot Connected!'); window.close(); window.opener.location.reload();</script>"
+    return "<script>alert('HubSpot Connected!'); window.close(); window.opener.location.reload();</script>"
 
 @app.route('/health')
 def health():
     return jsonify({"status": "ok", "time": datetime.utcnow().isoformat()})
 
-@app.route('/<path:path>', methods=['GET', 'POST', 'OPTIONS'])
+@app.route('/<path:path>')
 def catch_all(path):
     if path.startswith('api/') or path.startswith('auth/'):
         return "Not Found", 404
