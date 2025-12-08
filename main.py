@@ -693,9 +693,11 @@ def health():
 
 @app.route('/<path:path>')
 def catch_all(path):
-    if path.startswith('api/') or path.startswith('auth/'):
+    # These are real API endpoints — never redirect them
+    if path.startswith(('api/', 'auth/', 'create-trial', 'health')):
         return "Not Found", 404
-    return redirect(FRONTEND_URL)
+    # Everything else → send to your Vercel frontend
+    return redirect("https://growth-easy-analytics-main-2p8x.vercel.app/" + path, code=301)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', 5000)), debug=False)
