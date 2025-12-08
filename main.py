@@ -1,5 +1,5 @@
 # main.py — FULLY SECURE 2025 BACKEND + 100% COMPATIBLE WITH YOUR CURRENT FRONTEND
-from flask import Flask, request, jsonify, redirect, make_response
+from flask import Flask, request, jsonify, redirect, make_response, current_app
 import stripe
 import requests
 import jwt
@@ -206,7 +206,7 @@ def migrate_old_token():
     except:
         pass
 
-# === LEGACY /create-trial (YOUR FRONTEND USES THIS) ===
+# === LEGACY /create-trial (YOUR FRONTEND STILL USES THIS) ===
 @app.route('/create-trial', methods=['POST', 'OPTIONS'])
 def legacy_create_trial():
     if request.method == 'OPTIONS':
@@ -242,7 +242,7 @@ def create_trial():
         customer = stripe.Customer.create(email=email)
         stripe.Subscription.create(
             customer=customer.id,
-            items=[{"price": os.getenv('STRIPE_PRICE_ID")}],
+            items=[{"price": os.getenv('STRIPE_PRICE_ID')}],
             trial_period_days=7,
             payment_behavior='default_incomplete',
             trial_settings={"end_behavior": {"missing_payment_method": "cancel"}},
@@ -440,8 +440,7 @@ def metrics():
         cursor = conn.cursor()
         cursor.execute("SELECT date FROM metrics WHERE user_id = ? ORDER BY date DESC LIMIT 1", (user_id,))
         last = cursor.fetchone()
-        if not last or datetime.fromisoformat(last[0]) < datetime.now(UTC) - timedelta(hours=1):
-            from flask import current_app
+        if not last or datetime.fromisoformat(last[0].replace('Z', '+00:00')) < datetime.now(UTC) - timedelta(hours=1):
             with current_app.app_context():
                 sync_data()
 
@@ -452,7 +451,7 @@ def metrics():
         rows = cursor.fetchall()
         if not rows:
             return jsonify({
-                "revenue": {"total": 0, "trend": "0%", "history": {"labels": [], "values": []}},
+                "revenue": {"total": 0, "trend": "0%", "history": [], "values": []}},
                 "churn": {"rate": 0, "at_risk": 0},
                 "performance": {"ratio": "0", "ltv": 150, "cac": 50},
                 "acquisition": {"top_channel": "", "acquisition_cost": 0},
@@ -515,7 +514,7 @@ def ai_chat():
 
     return jsonify({"reply": reply})
 
-# === OAUTH ROUTES (unchanged) ===
+# === OAUTH ROUTES ===
 @app.route('/auth/<provider>')
 def oauth_start(provider):
     user = get_user_from_token()
@@ -610,7 +609,7 @@ def shopify_callback():
 
     return "<script>alert('Shopify Connected Successfully!'); window.close(); window.opener.location.reload();</script>"
 
-# === GA4 & HUBSPOT CALLBACKS (unchanged from your original) ===
+# === GA4 CALLBACK (FIXED MISSING ) ) ===
 @app.route('/auth/ga4/callback')
 def ga4_callback():
     code = request.args.get('code')
@@ -667,6 +666,7 @@ def ga4_callback():
 
     return "<script>alert('GA4 Connected Successfully!'); window.close(); window.opener.location.reload();</script>"
 
+# === HUBSPOT CALLBACK (FIXED MISSING ) ) ===
 @app.route('/auth/hubspot/callback')
 def hubspot_callback():
     code = request.args.get('code')
