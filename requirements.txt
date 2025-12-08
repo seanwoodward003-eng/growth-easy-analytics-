@@ -1,6 +1,7 @@
 Flask
-Flask-cors
-stripe>=11.5.0
+Flask-Cors
+Flask-Limiter==3.8.0
+stripe==11.5.0
 gunicorn
 requests==2.31.0
 python-dateutil
