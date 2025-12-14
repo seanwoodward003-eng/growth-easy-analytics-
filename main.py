@@ -711,10 +711,19 @@ def health():
 # === FIXED CATCH-ALL ===
 @app.route('/<path:path>')
 def catch_all(path):
-    if path.startswith(('api/', 'auth/', 'health', 'create-trial')):
-        return "Not Found", 404
-    target = FRONTEND_URL if FRONTEND_URL else "https://growth-easy-analytics-main-26jk-pb10b9hc9.vercel.app"
+    # Let Flask handle known routes (api/, auth/, health, etc.) normally
+    # Only redirect everything ELSE to frontend for SPA client-side routing
+    if path.startswith(('api/', 'auth/', 'health', 'create-trial', 'static/')):
+        return "Not Found", 404  # Optional: remove this line entirely if you want real 404s
+    
+    # Redirect all other paths to your Vercel frontend (for /dashboard, /about, etc.)
+    target = FRONTEND_URL or "https://growth-easy-analytics-main.vercel.app"
     return redirect(target.rstrip('/') + '/' + path, code=302)
+
+# Also add a simple root route for testing (optional but helpful)
+@app.route('/')
+def root():
+    return jsonify({"message": "GrowthEasy AI Backend Live 🚀", "health": "ok"}), 200
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', 5000)), debug=False)
