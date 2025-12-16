@@ -708,6 +708,45 @@ def hubspot_callback():
 def health():
     return jsonify({"status": "ok", "time": datetime.now(UTC).isoformat()})
 
+@app.route('/api/create-checkout', methods=['POST', 'OPTIONS'])
+def create_checkout():
+    if request.method == 'OPTIONS':
+        return '', 200
+
+    user = require_auth()
+    if isinstance(user, tuple):
+        return user
+    user_id = user["id"]
+
+    plan = request.json.get('plan')
+    if plan not in ['lifetime_early', 'lifetime', 'monthly', 'annual']:
+        return jsonify({"error": "Invalid plan"}), 400
+
+    price_map = {
+        'lifetime_early': os.getenv('STRIPE_PRICE_LTD_EARLY'),
+        'lifetime': os.getenv('STRIPE_PRICE_LTD'),
+        'monthly': os.getenv('STRIPE_PRICE_MONTHLY'),
+        'annual': os.getenv('STRIPE_PRICE_ANNUAL'),
+    }
+
+    price_id = price_map[plan]
+
+    with get_db() as conn:
+        row = conn.execute("SELECT stripe_id FROM users WHERE id = ?", (user_id,)).fetchone()
+        customer_id = row['stripe_id'] if row else None
+
+    session = stripe.checkout.Session.create(
+        customer=customer_id,
+        payment_method_types=['card'],
+        line_items=[{'price': price_id, 'quantity': 1}],
+        mode='subscription' if plan in ['monthly', 'annual'] else 'payment',
+        success_url=f"{FRONTEND_URL}/success?session_id={{CHECKOUT_SESSION_ID}}",
+        cancel_url=f"{FRONTEND_URL}/pricing",
+        subscription_data={'trial_period_days': 7} if plan in ['monthly', 'annual'] else None,
+    )
+
+    return jsonify({"sessionId": session.id})
+
 # === FIXED CATCH-ALL ===
 @app.route('/<path:path>')
 def catch_all(path):
