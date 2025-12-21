@@ -48,14 +48,12 @@ limiter = Limiter(app=app, key_func=get_remote_address, default_limits=["400 per
 
 # FIXED: Allow all your Vercel + localhost origins
 ALLOWED_ORIGINS = [
-    "https://growth-easy-analytics-main-26jk-pb10b9hc9.vercel.app",
-    "https://growth-easy-analytics-main-f57a.vercel.app",
-    "https://growth-easy-analytics-main-2p8x.vercel.app",
-    "https://growth-easy-analytics-main.vercel.app",
+    "https://growth-easy-analytics-main.onrender.com",  # Your current live frontend
     "http://localhost:3000",
     "http://localhost:5173",
     "http://127.0.0.1:3000",
 ]
+
 CORS(app, origins=ALLOWED_ORIGINS, supports_credentials=True)
 
 logging.basicConfig(level=logging.INFO)
