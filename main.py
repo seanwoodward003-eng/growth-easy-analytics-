@@ -15,6 +15,8 @@ from dateutil.relativedelta import relativedelta
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import logging
+from flask import send_from_directory
+
 
 app = Flask(__name__, static_folder='.', static_url_path='')
 app.secret_key = os.getenv('SECRET_KEY')
