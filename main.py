@@ -1,4 +1,4 @@
-# main.py — FULLY SECURE 2025 BACKEND + 100% COMPATIBLE WITH YOUR CURRENT FRONTEND
+# main.py — FULLY SECURE 2025 BACKEND + FREE 7-DAY TRIAL IMPLEMENTED
 from flask import Flask, request, jsonify, redirect, make_response, current_app
 import stripe
 import requests
@@ -133,7 +133,10 @@ def init_db():
             ('shopify_access_token', 'ALTER TABLE users ADD COLUMN shopify_access_token TEXT'),
             ('gdpr_consented', 'ALTER TABLE users ADD COLUMN gdpr_consented INTEGER DEFAULT 0'),
             ('ga4_last_refreshed', 'ALTER TABLE users ADD COLUMN ga4_last_refreshed TEXT'),
-            ('hubspot_access_token', 'ALTER TABLE users ADD COLUMN hubspot_access_token TEXT')
+            ('hubspot_access_token', 'ALTER TABLE users ADD COLUMN hubspot_access_token TEXT'),
+            # === NEW TRIAL COLUMNS ADDED HERE ===
+            ('trial_end', 'ALTER TABLE users ADD COLUMN trial_end TEXT'),
+            ('subscription_status', "ALTER TABLE users ADD COLUMN subscription_status TEXT DEFAULT 'trial'"),
         ]:
             if col not in columns:
                 cursor.execute(sql)
@@ -166,10 +169,20 @@ def get_user_from_token():
         logger.warning(f"JWT decode error: {e}")
         return None
 
+# === UPDATED require_auth() WITH TRIAL EXPIRATION CHECK ===
 def require_auth():
     user = get_user_from_token()
     if not user:
         return jsonify({"error": "Unauthorized"}), 401
+
+    with get_db() as conn:
+        row = conn.execute("SELECT trial_end, subscription_status FROM users WHERE id = ?", (user["id"],)).fetchone()
+        if row['subscription_status'] == 'trial':
+            if datetime.now(UTC).isoformat() > row['trial_end']:
+                return jsonify({"error": "trial_expired"}), 403
+        elif row['subscription_status'] == 'canceled':
+            return jsonify({"error": "subscription_canceled"}), 403
+
     return user
 
 def verify_csrf():
@@ -211,7 +224,7 @@ def legacy_create_trial():
         return '', 200
     return create_trial()
 
-# === NEW SIGNUP ENDPOINT ===
+# === NEW SIGNUP ENDPOINT — FREE 7-DAY TRIAL (NO STRIPE, NO CARD) ===
 @app.route('/api/signup', methods=['POST', 'OPTIONS'])
 @limiter.limit("3 per minute", key_func=lambda: request.json.get('email', '').lower())
 def create_trial():
@@ -220,42 +233,19 @@ def create_trial():
 
     email = request.json.get('email', '').strip().lower()
     consent = request.json.get('consent', False)
-    recaptcha_token = request.json.get('recaptchaToken')
 
     if not email or '@' not in email or '.' not in email or not consent:
         return jsonify({"error": "Valid email and consent required"}), 400
 
-    if RECAPTCHA_SECRET and recaptcha_token:
-        verify_resp = requests.post("https://www.google.com/recaptcha/api/siteverify", data={
-            'secret': RECAPTCHA_SECRET,
-            'response': recaptcha_token,
-            'remoteip': get_remote_address()
-        })
-        result = verify_resp.json()
-        if not result.get('success') or result.get('score', 1.0) < 0.5:
-            logger.warning(f"reCAPTCHA failed: {result}")
-            return jsonify({"error": "Suspicious activity"}), 400
-
-    try:
-        customer = stripe.Customer.create(email=email)
-        stripe.Subscription.create(
-            customer=customer.id,
-            items=[{"price": os.getenv('STRIPE_PRICE_ID')}],
-            trial_period_days=7,
-            payment_behavior='default_incomplete',
-            trial_settings={"end_behavior": {"missing_payment_method": "cancel"}},
-            expand=['latest_invoice.payment_intent']
-        )
-    except stripe.error.StripeError as e:
-        logger.error(f"Stripe error: {e}")
-        return jsonify({"error": "Payment setup failed—try again."}), 400
+    trial_end = (datetime.now(UTC) + timedelta(days=7)).isoformat()
 
     with get_db() as conn:
         conn.execute(
-            "INSERT OR IGNORE INTO users (email, stripe_id, gdpr_consented) VALUES (?, ?, ?)",
-            (email, customer.id, 1)
+            "INSERT OR IGNORE INTO users (email, gdpr_consented, trial_end, subscription_status) VALUES (?, ?, ?, ?)",
+            (email, 1, trial_end, 'trial')
         )
-        user_id = conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()['id']
+        user_row = conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
+        user_id = user_row['id']
         conn.commit()
 
     access_token, refresh_token = generate_tokens(user_id, email)
@@ -608,7 +598,7 @@ def shopify_callback():
 
     return "<script>alert('Shopify Connected Successfully!'); window.close(); window.opener.location.reload();</script>"
 
-# === GA4 CALLBACK (FIXED MISSING ) ) ===
+# === GA4 CALLBACK ===
 @app.route('/auth/ga4/callback')
 def ga4_callback():
     code = request.args.get('code')
@@ -665,7 +655,7 @@ def ga4_callback():
 
     return "<script>alert('GA4 Connected Successfully!'); window.close(); window.opener.location.reload();</script>"
 
-# === HUBSPOT CALLBACK (FIXED MISSING ) ) ===
+# === HUBSPOT CALLBACK ===
 @app.route('/auth/hubspot/callback')
 def hubspot_callback():
     code = request.args.get('code')
@@ -748,16 +738,12 @@ def create_checkout():
 # === FIXED CATCH-ALL ===
 @app.route('/<path:path>')
 def catch_all(path):
-    # Let Flask handle known routes (api/, auth/, health, etc.) normally
-    # Only redirect everything ELSE to frontend for SPA client-side routing
     if path.startswith(('api/', 'auth/', 'health', 'create-trial', 'static/')):
-        return "Not Found", 404  # Optional: remove this line entirely if you want real 404s
+        return "Not Found", 404
     
-    # Redirect all other paths to your Vercel frontend (for /dashboard, /about, etc.)
     target = FRONTEND_URL or "https://growth-easy-analytics-main.onrender.com"
     return redirect(target.rstrip('/') + '/' + path, code=302)
 
-# Also add a simple root route for testing (optional but helpful)
 @app.route('/')
 def root():
     return jsonify({"message": "GrowthEasy AI Backend Live 🚀", "health": "ok"}), 200
