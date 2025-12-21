@@ -745,6 +745,25 @@ def catch_all(path):
     
     target = FRONTEND_URL or "https://growth-easy-analytics-main.onrender.com"
     return redirect(target.rstrip('/') + '/' + path, code=302)
+    
+    # Serve Next.js static files from the 'out/' folder
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_static(path):
+    out_dir = os.path.join(os.path.dirname(__file__), 'out')
+    
+    # Serve Next.js assets (JS/CSS)
+    if path.startswith('_next/'):
+        asset_path = path[len('_next/'):]
+        return send_from_directory(os.path.join(out_dir, '_next'), asset_path)
+    
+    # Serve exact file if it exists (e.g. images, etc.)
+    full_path = os.path.join(out_dir, path)
+    if os.path.isfile(full_path):
+        return send_from_directory(out_dir, path)
+    
+    # For all other routes (including /dashboard, /login) — serve the main index.html
+    return send_from_directory(out_dir, 'index.html')
 
 @app.route('/')
 def root():
