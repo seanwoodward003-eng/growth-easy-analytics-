@@ -756,7 +756,7 @@ def catch_all(path):
         return "Not Found", 404  # Optional: remove this line entirely if you want real 404s
     
     # Redirect all other paths to your Vercel frontend (for /dashboard, /about, etc.)
-    target = FRONTEND_URL or "https://growth-easy-analytics-main.vercel.app"
+    target = FRONTEND_URL or "https://growth-easy-analytics-main.onrender.com"
     return redirect(target.rstrip('/') + '/' + path, code=302)
 
 # Also add a simple root route for testing (optional but helpful)
