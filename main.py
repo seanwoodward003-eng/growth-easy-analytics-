@@ -757,6 +757,26 @@ def serve_static(path):
     
     # For all other routes (including /dashboard, /login) — serve the main index.html
     return send_from_directory(out_dir, 'index.html')
+    
+    from flask import send_from_directory
+from werkzeug.exceptions import NotFound
+
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def catch_all(path):
+    # Protect API routes
+    if path.startswith('api/') or path.startswith('auth/') or path.startswith('webhook') or path.startswith('health'):
+        return "Not Found", 404
+
+    # Serve static Next.js files (if you have 'out' folder uploaded)
+    out_dir = os.path.join(os.path.dirname(__file__), 'out')
+    full_path = os.path.join(out_dir, path)
+
+    if os.path.isfile(full_path):
+        return send_from_directory(out_dir, path)
+
+    # SPA fallback
+    return send_from_directory(out_dir, 'index.html')
 
 if __name__ == '__main__': 
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', 5000)), debug=False)
