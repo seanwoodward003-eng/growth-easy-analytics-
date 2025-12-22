@@ -751,6 +751,16 @@ def catch_all(path):
 @app.route('/<path:path>')
 def serve_static(path):
     out_dir = os.path.join(os.path.dirname(__file__), 'out')
+
+@app.route('/')
+def root():
+    return jsonify({"message": "GrowthEasy AI Backend Live 🚀", "health": "ok"}), 200
+
+# Serve Next.js static files from the 'out/' folder
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_static(path):
+    out_dir = os.path.join(os.path.dirname(__file__), 'out')
     
     # Serve Next.js assets (JS/CSS)
     if path.startswith('_next/'):
@@ -764,10 +774,6 @@ def serve_static(path):
     
     # For all other routes (including /dashboard, /login) — serve the main index.html
     return send_from_directory(out_dir, 'index.html')
-
-@app.route('/')
-def root():
-    return jsonify({"message": "GrowthEasy AI Backend Live 🚀", "health": "ok"}), 200
 
 if __name__ == '__main__': 
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', 5000)), debug=False)
