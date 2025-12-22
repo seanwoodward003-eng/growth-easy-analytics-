@@ -738,12 +738,7 @@ def create_checkout():
     return jsonify({"sessionId": session.id})
 
 
-    # Serve Next.js static files from the 'out/' folder
-@app.route('/', defaults={'path': ''})
-@app.route('/<path:path>')
-def serve_static(path):
-    out_dir = os.path.join(os.path.dirname(__file__), 'out')
-
+   
 @app.route('/')
 def root():
     return jsonify({"message": "GrowthEasy AI Backend Live 🚀", "health": "ok"}), 200
