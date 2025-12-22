@@ -739,10 +739,6 @@ def create_checkout():
 
 
    
-@app.route('/')
-def root():
-    return jsonify({"message": "GrowthEasy AI Backend Live 🚀", "health": "ok"}), 200
-
 # Serve Next.js static files from the 'out/' folder
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
