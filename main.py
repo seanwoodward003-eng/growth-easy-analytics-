@@ -737,15 +737,7 @@ def create_checkout():
 
     return jsonify({"sessionId": session.id})
 
-# === FIXED CATCH-ALL ===
-@app.route('/<path:path>')
-def catch_all(path):
-    if path.startswith(('api/', 'auth/', 'health', 'create-trial', 'static/')):
-        return "Not Found", 404
-    
-    target = FRONTEND_URL or "https://growth-easy-analytics-main.onrender.com"
-    return redirect(target.rstrip('/') + '/' + path, code=302)
-    
+
     # Serve Next.js static files from the 'out/' folder
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
