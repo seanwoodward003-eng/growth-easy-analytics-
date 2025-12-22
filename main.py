@@ -737,6 +737,25 @@ def create_checkout():
 
     return jsonify({"sessionId": session.id})
 
+from flask import send_from_directory
+from werkzeug.exceptions import NotFound
+
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def catch_all(path):
+    # Protect API routes, auth, webhook — let Flask handle them normally
+    if path.startswith('api/') or path.startswith('auth/') or path.startswith('webhook') or path.startswith('health'):
+        return "Not Found", 404  # Flask will 404 if no route matches
+
+    # Serve static Next.js files from 'out' folder
+    out_dir = os.path.join(os.path.dirname(__file__), 'out')
+    full_path = os.path.join(out_dir, path)
+
+    if os.path.isfile(full_path):
+        return send_from_directory(out_dir, path)
+
+    # SPA fallback for Next.js routing
+    return send_from_directory(out_dir, 'index.html')
 
    
 
